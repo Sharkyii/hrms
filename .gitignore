@@ -1,0 +1,10 @@
+node_modules/
+.wrangler/
+.dev.vars
+dist/
+frontend/dist/
+frontend/node_modules/
+*.log
+
+# Generated seed data contains a real password hash — regenerate locally via `npm run seed:generate`.
+seed/seed.sql
