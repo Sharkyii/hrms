@@ -45,7 +45,7 @@ app.post("/import/preview", async (c) => {
   if (!device) return c.json({ error: `Unknown device code '${deviceCode}' — register the device first` }, 400);
 
   const buffer = await file.arrayBuffer();
-  const { rows, unmappedColumnCount } = await parseBiometricWorkbook(buffer);
+  const { rows, unmappedColumnCount, sourceFormat } = await parseBiometricWorkbook(buffer);
   if (rows.length === 0) {
     return c.json({ error: "No punch rows found — check the file has User ID, Timestamp, and In/Out columns" }, 400);
   }
@@ -53,9 +53,11 @@ app.post("/import/preview", async (c) => {
   const mappings = await db.select().from(biometricDeviceMappings).where(eq(biometricDeviceMappings.deviceId, device.id)).all();
   const mapByCode = new Map(mappings.map((m) => [m.deviceUserCode, m.employeeId]));
 
-  // Auto-map fallback: if a device user code matches an employee code exactly, use it (and it gets saved below).
+  // Auto-map fallbacks: an exact employee-code match, then an exact (case-insensitive) name match
+  // against the name the device itself reported — vendor exports include both ID and Name.
   const allEmployees = await db.select().from(employees).all();
   const employeeByCode = new Map(allEmployees.map((e) => [e.employeeCode, e.id]));
+  const employeeByName = new Map(allEmployees.map((e) => [e.fullName.trim().toLowerCase(), e.id]));
 
   const batch = await db
     .insert(biometricImportBatches)
@@ -71,7 +73,11 @@ app.post("/import/preview", async (c) => {
     const rowHash = computeRowHash(deviceCode, row);
     const isDuplicate = await db.select().from(biometricImportRows).where(eq(biometricImportRows.rowHash, rowHash)).get();
 
-    let resolvedEmployeeId = mapByCode.get(row.deviceUserCode) ?? employeeByCode.get(row.deviceUserCode) ?? null;
+    let resolvedEmployeeId =
+      mapByCode.get(row.deviceUserCode) ??
+      employeeByCode.get(row.deviceUserCode) ??
+      (row.employeeName ? employeeByName.get(row.employeeName.trim().toLowerCase()) : undefined) ??
+      null;
     let status: "ready" | "duplicate" | "unknown_id";
     if (isDuplicate) {
       status = "duplicate";
@@ -89,6 +95,7 @@ app.post("/import/preview", async (c) => {
       rowHash,
       deviceCode,
       deviceUserCode: row.deviceUserCode,
+      deviceEmployeeName: row.employeeName ?? null,
       punchDatetime: row.punchDatetime,
       inOut: row.inOut,
       resolvedEmployeeId,
@@ -103,7 +110,13 @@ app.post("/import/preview", async (c) => {
     .run();
 
   const previewRows = await db.select().from(biometricImportRows).where(eq(biometricImportRows.batchId, batch.id)).all();
-  return c.json({ batchId: batch.id, unmappedColumnCount, summary: { total: rows.length, ready: imported, duplicates, unknown }, rows: previewRows });
+  return c.json({
+    batchId: batch.id,
+    sourceFormat,
+    unmappedColumnCount,
+    summary: { total: rows.length, ready: imported, duplicates, unknown },
+    rows: previewRows,
+  });
 });
 
 // HR resolves an unknown device user code to an employee; saved so future files auto-map it.

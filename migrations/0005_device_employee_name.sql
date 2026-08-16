@@ -1,0 +1,1 @@
+ALTER TABLE `biometric_import_rows` ADD `device_employee_name` text;

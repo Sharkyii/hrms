@@ -36,6 +36,20 @@
       "when": 1786899737967,
       "tag": "0004_drop_recruitment",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1786900706580,
+      "tag": "0005_device_employee_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1786901252811,
+      "tag": "0006_payroll_extensions",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,10 @@
-// Permission keys and their default role grants, per the System Overview doc section 6.
+// Permission keys and their default role grants, per the System Overview doc section 6 — with one
+// deliberate deviation: managers can view and edit payroll for their own team (loan/TDS entries,
+// see routes/payroll.ts), which the original doc's "manager cannot see salary" line would have
+// disallowed. Requested directly by the founder; scoped to the manager's own team only.
 // Founder: full access to everything, only role that can change access levels.
 // HR: all employee records/attendance/leave/payroll/policies; cannot touch founder access or approve own payroll.
-// Manager: own team only — attendance/leave/exceptions/KRA approval; cannot see salary.
+// Manager: own team only — attendance/leave/exceptions/KRA approval, own team's payroll.
 // Employee: own profile/attendance/payslip, apply leave, raise queries.
 
 export const PERMISSIONS = [
@@ -24,6 +27,8 @@ export const PERMISSIONS = [
   "payroll.process",
   "payroll.view_salary_all",
   "payroll.view_own_payslip",
+  "payroll.view_team",
+  "payroll.edit_team",
   "payroll.override_approval",
   "kra.rate_team",
   "kra.view_all",
@@ -76,6 +81,8 @@ export const ROLE_PERMISSIONS: Record<"founder" | "hr" | "manager" | "employee",
     "leave.approve_team",
     "kra.rate_team",
     "payroll.view_own_payslip",
+    "payroll.view_team",
+    "payroll.edit_team",
     "assets.view_own",
     "policies.view",
     "queries.raise",

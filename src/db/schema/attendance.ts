@@ -143,6 +143,7 @@ export const biometricImportRows = sqliteTable("biometric_import_rows", {
   rowHash: text("row_hash").notNull(),
   deviceCode: text("device_code").notNull(),
   deviceUserCode: text("device_user_code").notNull(),
+  deviceEmployeeName: text("device_employee_name"),
   punchDatetime: text("punch_datetime").notNull(),
   inOut: text("in_out", { enum: ["in", "out", "unknown"] }).notNull(),
   resolvedEmployeeId: integer("resolved_employee_id").references(() => employees.id),

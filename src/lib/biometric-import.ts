@@ -1,24 +1,75 @@
-import { unzipSync } from "fflate";
+import * as XLSX from "xlsx";
 
 export interface RawPunchRow {
   deviceUserCode: string;
+  employeeName?: string;
   punchDatetime: string; // ISO
   inOut: "in" | "out" | "unknown";
 }
 
-// Generic offline-biometric export layout assumed per the doc: Device ID (optional, single-device
-// files often omit it), User/Card ID, Timestamp, In/Out. Column order varies by vendor, so we match
-// on header text rather than position. Re-map here once a real exported file is available.
-const USER_CODE_ALIASES = ["userid", "user id", "cardno", "card no", "employeeid", "employee id", "empcode", "device user id", "userid/card"];
+export interface ParsedFile {
+  rows: RawPunchRow[];
+  unmappedColumnCount: number;
+  sourceFormat: "vendor_exception_stat" | "generic";
+}
+
+function cellStr(v: unknown): string {
+  return v === undefined || v === null ? "" : String(v).trim();
+}
+
+// Combines a date string ("2026-07-01") with a time string ("09:19") into an ISO datetime.
+// Returns null if either half is missing/unparseable — used to skip half-punched days.
+function combineDateTime(dateStr: string, timeStr: string): string | null {
+  if (!dateStr || !timeStr) return null;
+  const timeMatch = timeStr.match(/^(\d{1,2}):(\d{2})/);
+  if (!timeMatch) return null;
+  const parsed = new Date(dateStr);
+  if (isNaN(parsed.getTime())) return null;
+  parsed.setHours(Number(timeMatch[1]), Number(timeMatch[2]), 0, 0);
+  return parsed.toISOString();
+}
+
+// Vendor biometric-software exports (eSSL/ZKTeco-style "Exception Statistic Report") ship a fixed,
+// two-row-header sheet named like "Exception Stat." with one row per employee per date and separate
+// On-duty/Off-duty columns — far more reliable than trying to reverse-engineer a generic layout.
+// Columns: ID, Name, Department, Date, OnDuty(zone1), OffDuty(zone1), OnDuty(zone2), OffDuty(zone2), ...
+function parseVendorExceptionSheet(sheet: XLSX.WorkSheet): RawPunchRow[] | null {
+  const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: "" });
+  if (grid.length < 4) return null;
+
+  const headerRow = grid[2]?.map(cellStr) ?? [];
+  const subHeaderRow = grid[3]?.map(cellStr) ?? [];
+  const looksLikeVendorFormat =
+    headerRow[0] === "ID" && headerRow[1] === "Name" && headerRow[3] === "Date" && subHeaderRow[4] === "On-duty";
+  if (!looksLikeVendorFormat) return null;
+
+  const rows: RawPunchRow[] = [];
+  for (let i = 4; i < grid.length; i++) {
+    const row = grid[i];
+    if (!row) continue;
+    const id = cellStr(row[0]);
+    const name = cellStr(row[1]);
+    const date = cellStr(row[3]);
+    if (!id || !date) continue;
+
+    const onDuty = cellStr(row[4]);
+    const offDuty = cellStr(row[5]);
+    const inIso = combineDateTime(date, onDuty);
+    const outIso = combineDateTime(date, offDuty);
+    if (inIso) rows.push({ deviceUserCode: id, employeeName: name, punchDatetime: inIso, inOut: "in" });
+    if (outIso) rows.push({ deviceUserCode: id, employeeName: name, punchDatetime: outIso, inOut: "out" });
+  }
+  return rows;
+}
+
+// Generic fallback for simpler flat exports: a single header row with User/Card ID, DateTime, and
+// In/Out columns matched by header text (order doesn't matter). Re-map aliases here as needed.
+const USER_CODE_ALIASES = ["userid", "user id", "cardno", "card no", "employeeid", "employee id", "empcode", "id", "device user id"];
 const DATETIME_ALIASES = ["datetime", "date time", "timestamp", "punch time", "date & time"];
 const IN_OUT_ALIASES = ["inout", "in/out", "status", "direction", "punch type"];
 
-function normalizeHeader(header: string): string {
-  return header.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
 function classifyColumn(header: string): "userCode" | "datetime" | "inOut" | null {
-  const normalized = normalizeHeader(header);
+  const normalized = header.trim().toLowerCase().replace(/\s+/g, " ");
   if (USER_CODE_ALIASES.includes(normalized)) return "userCode";
   if (DATETIME_ALIASES.includes(normalized)) return "datetime";
   if (IN_OUT_ALIASES.includes(normalized)) return "inOut";
@@ -32,141 +83,53 @@ function parseInOut(value: string): "in" | "out" | "unknown" {
   return "unknown";
 }
 
-function excelSerialToIso(serial: number): string {
-  const ms = Math.round((serial - 25569) * 86_400_000);
-  return new Date(ms).toISOString();
-}
-
 function parseDatetime(value: string): string | null {
-  if (value === "") return null;
-  if (/^-?\d+(\.\d+)?$/.test(value)) return excelSerialToIso(Number(value));
+  if (!value) return null;
   const parsed = new Date(value);
   return isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
-function unescapeXml(text: string): string {
-  return text
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
-    .replace(/&amp;/g, "&");
-}
+function parseGenericSheet(sheet: XLSX.WorkSheet): { rows: RawPunchRow[]; unmappedColumnCount: number } {
+  const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: "" });
+  if (grid.length === 0) return { rows: [], unmappedColumnCount: 0 };
 
-function colRefToIndex(cellRef: string): number {
-  const letters = cellRef.match(/^[A-Z]+/)?.[0] ?? "A";
-  let index = 0;
-  for (let i = 0; i < letters.length; i++) {
-    index = index * 26 + (letters.charCodeAt(i) - 64);
-  }
-  return index; // 1-based
-}
-
-function parseSharedStrings(xml: string | undefined): string[] {
-  if (!xml) return [];
-  const strings: string[] = [];
-  const siPattern = /<si\b[^>]*>(.*?)<\/si>/gs;
-  let siMatch: RegExpExecArray | null;
-  while ((siMatch = siPattern.exec(xml))) {
-    const tPattern = /<t[^>]*>(.*?)<\/t>/gs;
-    let text = "";
-    let tMatch: RegExpExecArray | null;
-    while ((tMatch = tPattern.exec(siMatch[1]))) {
-      text += unescapeXml(tMatch[1]);
-    }
-    strings.push(text);
-  }
-  return strings;
-}
-
-interface Cell {
-  colIndex: number;
-  value: string;
-}
-
-function parseSheetRows(xml: string, sharedStrings: string[]): string[][] {
-  const rows: string[][] = [];
-  const rowPattern = /<row\b[^>]*>(.*?)<\/row>/gs;
-  let rowMatch: RegExpExecArray | null;
-
-  while ((rowMatch = rowPattern.exec(xml))) {
-    const cellPattern = /<c\b([^>]*?)(?:\/>|>(.*?)<\/c>)/gs;
-    let cellMatch: RegExpExecArray | null;
-    const cells: Cell[] = [];
-
-    while ((cellMatch = cellPattern.exec(rowMatch[1]))) {
-      const attrs = cellMatch[1];
-      const inner = cellMatch[2] ?? "";
-      const ref = attrs.match(/r="([^"]+)"/)?.[1] ?? "A1";
-      const type = attrs.match(/t="([^"]+)"/)?.[1];
-      const colIndex = colRefToIndex(ref);
-
-      let value = "";
-      if (type === "inlineStr") {
-        const t = /<t[^>]*>(.*?)<\/t>/s.exec(inner);
-        value = t ? unescapeXml(t[1]) : "";
-      } else {
-        const v = /<v>(.*?)<\/v>/s.exec(inner);
-        const raw = v ? unescapeXml(v[1]) : "";
-        value = type === "s" ? sharedStrings[Number(raw)] ?? "" : raw;
-      }
-      cells.push({ colIndex, value });
-    }
-
-    if (cells.length === 0) continue;
-    const maxCol = Math.max(...cells.map((cell) => cell.colIndex));
-    const rowArray: string[] = new Array(maxCol + 1).fill("");
-    for (const cell of cells) rowArray[cell.colIndex] = cell.value;
-    rows.push(rowArray);
-  }
-
-  return rows;
-}
-
-export interface ParsedFile {
-  rows: RawPunchRow[];
-  unmappedColumnCount: number;
-}
-
-export async function parseBiometricWorkbook(buffer: ArrayBuffer): Promise<ParsedFile> {
-  const files = unzipSync(new Uint8Array(buffer));
-  const decoder = new TextDecoder();
-
-  const sheetEntry = Object.keys(files)
-    .filter((name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name))
-    .sort()[0];
-  if (!sheetEntry) return { rows: [], unmappedColumnCount: 0 };
-
-  const sharedStringsXml = files["xl/sharedStrings.xml"] ? decoder.decode(files["xl/sharedStrings.xml"]) : undefined;
-  const sharedStrings = parseSharedStrings(sharedStringsXml);
-  const sheetXml = decoder.decode(files[sheetEntry]);
-  const rawRows = parseSheetRows(sheetXml, sharedStrings);
-  if (rawRows.length === 0) return { rows: [], unmappedColumnCount: 0 };
-
-  const [headerRow, ...dataRows] = rawRows;
-  const columnRoles = headerRow.map((header) => classifyColumn(header));
-  const unmappedColumnCount = headerRow.filter((header, i) => header && !columnRoles[i]).length;
+  const headerRow = grid[0].map(cellStr);
+  const columnRoles = headerRow.map(classifyColumn);
+  const unmappedColumnCount = headerRow.filter((h, i) => h && !columnRoles[i]).length;
 
   const rows: RawPunchRow[] = [];
-  for (const dataRow of dataRows) {
-    let userCode: string | null = null;
+  for (let i = 1; i < grid.length; i++) {
+    const dataRow = grid[i];
+    let userCode = "";
     let datetime: string | null = null;
     let inOut: "in" | "out" | "unknown" = "unknown";
 
-    columnRoles.forEach((role, i) => {
-      const cellValue = dataRow[i] ?? "";
-      if (role === "userCode") userCode = cellValue.trim();
+    columnRoles.forEach((role, colIndex) => {
+      const cellValue = cellStr(dataRow[colIndex]);
+      if (role === "userCode") userCode = cellValue;
       if (role === "datetime") datetime = parseDatetime(cellValue);
       if (role === "inOut") inOut = parseInOut(cellValue);
     });
 
-    if (userCode && datetime) {
-      rows.push({ deviceUserCode: userCode, punchDatetime: datetime, inOut });
+    if (userCode && datetime) rows.push({ deviceUserCode: userCode, punchDatetime: datetime, inOut });
+  }
+  return { rows, unmappedColumnCount };
+}
+
+export async function parseBiometricWorkbook(buffer: ArrayBuffer): Promise<ParsedFile> {
+  const workbook = XLSX.read(buffer, { type: "array" });
+
+  const exceptionSheetName = workbook.SheetNames.find((name) => /exception/i.test(name) && /stat/i.test(name));
+  if (exceptionSheetName) {
+    const vendorRows = parseVendorExceptionSheet(workbook.Sheets[exceptionSheetName]);
+    if (vendorRows && vendorRows.length > 0) {
+      return { rows: vendorRows, unmappedColumnCount: 0, sourceFormat: "vendor_exception_stat" };
     }
   }
 
-  return { rows, unmappedColumnCount };
+  const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+  const { rows, unmappedColumnCount } = parseGenericSheet(firstSheet);
+  return { rows, unmappedColumnCount, sourceFormat: "generic" };
 }
 
 export function computeRowHash(deviceCode: string, row: RawPunchRow): string {

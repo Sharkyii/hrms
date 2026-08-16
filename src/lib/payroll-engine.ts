@@ -144,17 +144,24 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+export interface LineItem {
+  name: string;
+  amount: number;
+}
+
 export interface EarningsResult {
   proratedBasic: number;
   proratedHra: number;
-  proratedOtherEarnings: number;
-  grossEarnings: number;
   otAmount: number;
+  earningComponents: LineItem[]; // itemized recurring components (e.g. "Other Allowance"), prorated
+  deductionComponents: LineItem[]; // itemized recurring deductions from the salary structure, prorated
+  grossEarnings: number;
+  componentDeductionsTotal: number;
 }
 
 // Note: TDS (income tax withholding) is NOT auto-calculated — real slab/regime rules depend on
 // each employee's declared exemptions and projected annual income, which this system doesn't model.
-// HR/accounts should enter the TDS figure manually per payslip; see routes/payroll.ts.
+// HR/accounts enter the TDS figure per employee per run via payroll_manual_entries; see routes/payroll.ts.
 export async function computeEarnings(db: Db, employeeId: number, payableDays: PayableDaysResult, standardWorkingDays: number): Promise<EarningsResult> {
   const structure = await db
     .select()
@@ -164,7 +171,7 @@ export async function computeEarnings(db: Db, employeeId: number, payableDays: P
     .all();
   const active = structure.at(-1);
   if (!active) {
-    return { proratedBasic: 0, proratedHra: 0, proratedOtherEarnings: 0, grossEarnings: 0, otAmount: 0 };
+    return { proratedBasic: 0, proratedHra: 0, otAmount: 0, earningComponents: [], deductionComponents: [], grossEarnings: 0, componentDeductionsTotal: 0 };
   }
 
   const ratio = Math.min(payableDays.payableDays / standardWorkingDays, 1);
@@ -172,14 +179,20 @@ export async function computeEarnings(db: Db, employeeId: number, payableDays: P
   const proratedHra = round2(active.hra * ratio);
 
   const components = await db.select().from(salaryComponents).where(eq(salaryComponents.structureId, active.id)).all();
-  const otherEarnings = components.filter((c) => c.type === "earning").reduce((sum, c) => sum + c.amount, 0);
-  const proratedOtherEarnings = round2(otherEarnings * ratio);
+  const earningComponents = components
+    .filter((c) => c.type === "earning")
+    .map((c) => ({ name: c.name, amount: round2(c.amount * ratio) }));
+  const deductionComponents = components
+    .filter((c) => c.type === "deduction")
+    .map((c) => ({ name: c.name, amount: round2(c.amount * ratio) }));
+  const componentEarningsTotal = earningComponents.reduce((sum, c) => sum + c.amount, 0);
+  const componentDeductionsTotal = deductionComponents.reduce((sum, c) => sum + c.amount, 0);
 
   const hourlyRate = active.basic / (standardWorkingDays * STANDARD_SHIFT_HOURS);
   const otAmount = round2(payableDays.otHours * hourlyRate);
 
-  const grossEarnings = round2(proratedBasic + proratedHra + proratedOtherEarnings + otAmount);
-  return { proratedBasic, proratedHra, proratedOtherEarnings, grossEarnings, otAmount };
+  const grossEarnings = round2(proratedBasic + proratedHra + componentEarningsTotal + otAmount);
+  return { proratedBasic, proratedHra, otAmount, earningComponents, deductionComponents, grossEarnings, componentDeductionsTotal };
 }
 
 export const STANDARD_WORKING_DAYS_PER_MONTH = WORKING_DAYS_PER_MONTH_DIVISOR;

@@ -108,3 +108,40 @@ export const holidays = sqliteTable("holidays", {
   date: text("date").notNull().unique(),
   name: text("name").notNull(),
 });
+
+// Single active row — company letterhead details for the payslip PDF (name/address/PAN/logo).
+export const companySettings = sqliteTable("company_settings", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  addressLine1: text("address_line1"),
+  addressLine2: text("address_line2"),
+  panNumber: text("pan_number"),
+  logoBase64: text("logo_base64"),
+  signatoryLabel: text("signatory_label").notNull().default("Authorized Signatory"),
+});
+
+// Statutory identifiers that appear on a payslip but rarely change — set once per employee.
+export const employeePayrollDetails = sqliteTable("employee_payroll_details", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  employeeId: integer("employee_id").notNull().references(() => employees.id).unique(),
+  panNumber: text("pan_number"),
+  uanNumber: text("uan_number"),
+  pfAccountNumber: text("pf_account_number"),
+  esiNumber: text("esi_number"),
+  pranNumber: text("pran_number"),
+  taxRegime: text("tax_regime"),
+  function: text("function"),
+  location: text("location"),
+});
+
+// The per-run, per-employee inputs that actually change month to month (loan installment, TDS).
+// Kept separate from `payslips` so they survive a preview recompute instead of being wiped with it.
+export const payrollManualEntries = sqliteTable("payroll_manual_entries", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  payrollRunId: integer("payroll_run_id").notNull().references(() => payrollRuns.id),
+  employeeId: integer("employee_id").notNull().references(() => employees.id),
+  loan: real("loan").notNull().default(0),
+  tds: real("tds").notNull().default(0),
+  updatedByUserId: integer("updated_by_user_id").notNull().references(() => users.id),
+  updatedAt: text("updated_at").notNull().default(sql`(current_timestamp)`),
+});
