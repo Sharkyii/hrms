@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db/client";
-import { employees, leaveRequests, attendanceRecords, payrollRuns, jobPostings, exitRequests } from "../db/schema";
+import { employees, leaveRequests, attendanceRecords, payrollRuns, exitRequests } from "../db/schema";
 import { requireAuth, requirePermission } from "../middleware/auth";
 import type { Env } from "../types";
 
@@ -20,7 +20,6 @@ app.get("/overview", async (c) => {
   const pendingLeave = await db.select().from(leaveRequests).where(eq(leaveRequests.status, "pending")).all();
   const pendingAttendanceExceptions = (await db.select().from(attendanceRecords).all()).filter((r) => r.status === "pending_manager");
   const runs = await db.select().from(payrollRuns).all();
-  const openJobPostings = (await db.select().from(jobPostings).all()).filter((j) => j.status === "open");
   const pendingExits = (await db.select().from(exitRequests).all()).filter((r) => r.status !== "settled" && r.status !== "cancelled");
 
   return c.json({
@@ -28,7 +27,6 @@ app.get("/overview", async (c) => {
     pendingLeaveRequests: pendingLeave.length,
     pendingAttendanceExceptions: pendingAttendanceExceptions.length,
     payrollRuns: runs.map((r) => ({ id: r.id, month: r.month, year: r.year, status: r.status })),
-    openJobPostings: openJobPostings.length,
     pendingExits: pendingExits.length,
   });
 });

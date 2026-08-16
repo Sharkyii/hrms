@@ -11,7 +11,6 @@ import kra from "./routes/kra";
 import assets from "./routes/assets";
 import policies from "./routes/policies";
 import queries from "./routes/queries";
-import recruitment from "./routes/recruitment";
 import exit from "./routes/exit";
 import analytics from "./routes/analytics";
 import type { Env } from "./types";
@@ -31,7 +30,6 @@ app.route("/api/kra", kra);
 app.route("/api/assets", assets);
 app.route("/api/policies", policies);
 app.route("/api/queries", queries);
-app.route("/api/recruitment", recruitment);
 app.route("/api/exit", exit);
 app.route("/api/analytics", analytics);
 

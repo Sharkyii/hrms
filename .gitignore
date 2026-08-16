@@ -8,3 +8,8 @@ frontend/node_modules/
 
 # Generated seed data contains a real password hash — regenerate locally via `npm run seed:generate`.
 seed/seed.sql
+
+# Reference/sample files with real employee and company data — used locally for format testing only.
+*.xls
+*.xlsx
+/*.pdf

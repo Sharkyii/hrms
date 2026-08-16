@@ -2,40 +2,6 @@ import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { employees, users } from "./core";
 
-export const jobPostings = sqliteTable("job_postings", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  title: text("title").notNull(),
-  department: text("department"),
-  status: text("status", { enum: ["open", "on_hold", "closed"] }).notNull().default("open"),
-  openings: integer("openings").notNull().default(1),
-  description: text("description"),
-  createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
-});
-
-export const candidates = sqliteTable("candidates", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  jobPostingId: integer("job_posting_id").notNull().references(() => jobPostings.id),
-  name: text("name").notNull(),
-  email: text("email").notNull(),
-  phone: text("phone"),
-  resumeUrl: text("resume_url"),
-  source: text("source"),
-  stage: text("stage", {
-    enum: ["applied", "screening", "interview", "offer", "hired", "rejected"],
-  }).notNull().default("applied"),
-  createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
-});
-
-export const interviews = sqliteTable("interviews", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  candidateId: integer("candidate_id").notNull().references(() => candidates.id),
-  round: integer("round").notNull().default(1),
-  interviewerUserId: integer("interviewer_user_id").references(() => users.id),
-  scheduledAt: text("scheduled_at"),
-  feedback: text("feedback"),
-  rating: real("rating"),
-});
-
 export const exitRequests = sqliteTable("exit_requests", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   employeeId: integer("employee_id").notNull().references(() => employees.id),

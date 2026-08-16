@@ -20,7 +20,6 @@ interface Overview {
   employees: { total: number; active: number; exited: number; byType: Record<string, number> };
   pendingLeaveRequests: number;
   pendingAttendanceExceptions: number;
-  openJobPostings: number;
   pendingExits: number;
 }
 
@@ -116,10 +115,6 @@ export function Dashboard() {
           <div className="stat">
             <div className="value">{overview.pendingLeaveRequests}</div>
             <div className="label">Pending leave requests</div>
-          </div>
-          <div className="stat">
-            <div className="value">{overview.openJobPostings}</div>
-            <div className="label">Open job postings</div>
           </div>
           <div className="stat">
             <div className="value">{overview.pendingExits}</div>

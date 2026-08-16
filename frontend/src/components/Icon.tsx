@@ -10,7 +10,6 @@ const paths: Record<string, string> = {
   assets: "M4 7l8-4 8 4v10l-8 4-8-4V7zm8-4v18M4 7l8 4 8-4",
   policies: "M6 3h9l3 3v15H6V3zm9 0v3h3M9 12h6M9 16h6",
   queries: "M12 21a9 9 0 1 0-6-15.7M3 21l1.5-4.5",
-  recruitment: "M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1",
   exit: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
   access: "M12 2l8 4v6c0 5-4 8-8 10-4-2-8-5-8-10V6l8-4z",
   logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",

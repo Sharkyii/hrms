@@ -29,6 +29,13 @@
       "when": 1786510108976,
       "tag": "0003_bank_details",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1786899737967,
+      "tag": "0004_drop_recruitment",
+      "breakpoints": true
     }
   ]
 }

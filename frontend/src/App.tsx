@@ -4,6 +4,7 @@ import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
 import { Employees } from "./pages/Employees";
+import { Attendance } from "./pages/Attendance";
 import { Exceptions } from "./pages/Exceptions";
 import { Leave } from "./pages/Leave";
 import { Biometric } from "./pages/Biometric";
@@ -12,7 +13,6 @@ import { Kra } from "./pages/Kra";
 import { Assets } from "./pages/Assets";
 import { Policies } from "./pages/Policies";
 import { Queries } from "./pages/Queries";
-import { Recruitment } from "./pages/Recruitment";
 import { Exit } from "./pages/Exit";
 import { Access } from "./pages/Access";
 import { Profile } from "./pages/Profile";
@@ -31,6 +31,7 @@ export default function App() {
       <Route element={<ProtectedLayout />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/employees" element={<Employees />} />
+        <Route path="/attendance" element={<Attendance />} />
         <Route path="/exceptions" element={<Exceptions />} />
         <Route path="/leave" element={<Leave />} />
         <Route path="/biometric" element={<Biometric />} />
@@ -39,7 +40,6 @@ export default function App() {
         <Route path="/assets" element={<Assets />} />
         <Route path="/policies" element={<Policies />} />
         <Route path="/queries" element={<Queries />} />
-        <Route path="/recruitment" element={<Recruitment />} />
         <Route path="/exit" element={<Exit />} />
         <Route path="/access" element={<Access />} />
         <Route path="/profile" element={<Profile />} />

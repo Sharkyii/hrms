@@ -1,6 +1,6 @@
 // Permission keys and their default role grants, per the System Overview doc section 6.
 // Founder: full access to everything, only role that can change access levels.
-// HR: all employee records/attendance/leave/payroll/recruitment/policies; cannot touch founder access or approve own payroll.
+// HR: all employee records/attendance/leave/payroll/policies; cannot touch founder access or approve own payroll.
 // Manager: own team only — attendance/leave/exceptions/KRA approval; cannot see salary.
 // Employee: own profile/attendance/payslip, apply leave, raise queries.
 
@@ -33,7 +33,6 @@ export const PERMISSIONS = [
   "policies.view",
   "queries.raise",
   "queries.manage",
-  "recruitment.manage",
   "analytics.view_all",
   "exit.manage",
 ] as const;
@@ -63,7 +62,6 @@ export const ROLE_PERMISSIONS: Record<"founder" | "hr" | "manager" | "employee",
     "policies.view",
     "queries.raise",
     "queries.manage",
-    "recruitment.manage",
     "analytics.view_all",
     "exit.manage",
   ],
