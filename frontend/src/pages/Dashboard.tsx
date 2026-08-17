@@ -3,6 +3,7 @@ import { useAuth } from "../auth";
 import { api, ApiError } from "../api";
 import { Badge } from "../components/Badge";
 import { Spinner } from "../components/Spinner";
+import { BarRows, ColumnChart } from "../components/Charts";
 import { useToast } from "../components/Toast";
 import { queuePunch, flushQueuedPunches } from "../offlineQueue";
 
@@ -16,11 +17,157 @@ interface AttendanceRecord {
   flagReason: string | null;
 }
 
-interface Overview {
+interface PerformanceSummary {
+  cycleName: string | null;
+  goalCoveragePct: number;
+  employeesWithGoals: number;
+  avgFinalRating: number | null;
+  membersWithoutGoals: number[];
+  membersWithoutGoalNames?: string[];
+}
+
+interface ExecutiveOverview {
   employees: { total: number; active: number; exited: number; byType: Record<string, number> };
-  pendingLeaveRequests: number;
-  pendingAttendanceExceptions: number;
-  pendingExits: number;
+  approvals: { pendingLeaveRequests: number; pendingAttendanceExceptions: number; pendingCorrectionRequests: number; pendingExits: number };
+  attendanceHealth: { total: number; autoApproved: number; approved: number; pendingManager: number; rejected: number };
+  performance: PerformanceSummary;
+  payroll: { trend: Array<{ month: number; year: number; status: string; totalNetPay: number; totalGross: number }>; employeesMissingBankDetails: number; employeesMissingPayrollDetails: number };
+}
+
+interface TeamOverview {
+  team: { count: number; active: number; presentToday: number };
+  approvals: { pendingLeaveRequests: number; pendingAttendanceExceptions: number };
+  performance: PerformanceSummary;
+  payroll: { month: number; year: number; status: string; teamNetPayTotal: number } | null;
+}
+
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function ExecutiveOverviewSection({ data }: { data: ExecutiveOverview }) {
+  return (
+    <>
+      <div className="stat-grid" style={{ marginBottom: 20 }}>
+        <div className="stat">
+          <div className="value">{data.employees.active}</div>
+          <div className="label">Active employees</div>
+        </div>
+        <div className="stat">
+          <div className="value">
+            {data.approvals.pendingLeaveRequests + data.approvals.pendingAttendanceExceptions + data.approvals.pendingCorrectionRequests}
+          </div>
+          <div className="label">Pending approvals</div>
+        </div>
+        <div className="stat">
+          <div className="value">{data.performance.goalCoveragePct}%</div>
+          <div className="label">Goal coverage</div>
+        </div>
+        <div className="stat">
+          <div className="value">{data.performance.avgFinalRating ?? "—"}</div>
+          <div className="label">Avg. performance rating</div>
+        </div>
+        <div className="stat">
+          <div className="value">{data.approvals.pendingExits}</div>
+          <div className="label">Exits in progress</div>
+        </div>
+      </div>
+
+      <div className="card">
+        <h2>Approvals backlog</h2>
+        <BarRows
+          items={[
+            { label: "Attendance exceptions", value: data.approvals.pendingAttendanceExceptions },
+            { label: "Leave requests", value: data.approvals.pendingLeaveRequests },
+            { label: "Correction requests", value: data.approvals.pendingCorrectionRequests },
+            { label: "Exits in progress", value: data.approvals.pendingExits },
+          ]}
+        />
+      </div>
+
+      <div className="card">
+        <h2>Attendance health — this month</h2>
+        <p className="muted" style={{ marginTop: -8, fontSize: 13 }}>How much attendance is genuinely auto-approved vs held for manual review.</p>
+        {data.attendanceHealth.total === 0 ? (
+          <p className="empty">No attendance recorded yet this month.</p>
+        ) : (
+          <BarRows
+            items={[
+              { label: "Auto-approved (high confidence)", value: data.attendanceHealth.autoApproved },
+              { label: "Approved after review", value: data.attendanceHealth.approved },
+              { label: "Held for manager review", value: data.attendanceHealth.pendingManager },
+              { label: "Rejected", value: data.attendanceHealth.rejected },
+            ].map((i) => ({ ...i, displayValue: `${i.value} (${Math.round((i.value / data.attendanceHealth.total) * 100)}%)` }))}
+          />
+        )}
+      </div>
+
+      <div className="card">
+        <h2>Performance — {data.performance.cycleName ?? "no open cycle"}</h2>
+        {data.performance.membersWithoutGoals.length > 0 && (
+          <p className="muted" style={{ fontSize: 13 }}>{data.performance.membersWithoutGoals.length} active employee(s) have no goals set this cycle.</p>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>Payroll cost trend</h2>
+        {data.payroll.trend.length === 0 ? (
+          <p className="empty">No payroll runs yet.</p>
+        ) : (
+          <ColumnChart
+            items={data.payroll.trend.map((t) => ({ label: `${MONTH_ABBR[t.month - 1]} ${String(t.year).slice(2)}`, value: t.totalNetPay }))}
+            formatValue={(v) => v.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+          />
+        )}
+        {(data.payroll.employeesMissingBankDetails > 0 || data.payroll.employeesMissingPayrollDetails > 0) && (
+          <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+            {data.payroll.employeesMissingBankDetails} employee(s) missing bank details · {data.payroll.employeesMissingPayrollDetails} missing payslip identifiers (PAN/UAN etc.)
+          </p>
+        )}
+      </div>
+    </>
+  );
+}
+
+function ManagerOverviewSection({ data }: { data: TeamOverview }) {
+  return (
+    <>
+      <div className="stat-grid" style={{ marginBottom: 20 }}>
+        <div className="stat">
+          <div className="value">{data.team.presentToday}/{data.team.active}</div>
+          <div className="label">Present today</div>
+        </div>
+        <div className="stat">
+          <div className="value">{data.approvals.pendingAttendanceExceptions}</div>
+          <div className="label">Attendance exceptions</div>
+        </div>
+        <div className="stat">
+          <div className="value">{data.approvals.pendingLeaveRequests}</div>
+          <div className="label">Pending leave</div>
+        </div>
+        <div className="stat">
+          <div className="value">{data.performance.goalCoveragePct}%</div>
+          <div className="label">Goal coverage</div>
+        </div>
+        <div className="stat">
+          <div className="value">{data.performance.avgFinalRating ?? "—"}</div>
+          <div className="label">Avg. team rating</div>
+        </div>
+      </div>
+
+      {(data.performance.membersWithoutGoalNames?.length ?? 0) > 0 && (
+        <div className="card">
+          <h2>No goals set this cycle — {data.performance.cycleName}</h2>
+          <p>{data.performance.membersWithoutGoalNames!.join(", ")}</p>
+        </div>
+      )}
+
+      {data.payroll && (
+        <div className="card">
+          <h2>Team payroll — {MONTH_ABBR[data.payroll.month - 1]} {data.payroll.year} — <Badge value={data.payroll.status} /></h2>
+          <p>Team net pay total: <strong>{data.payroll.teamNetPayTotal.toLocaleString("en-IN")}</strong></p>
+        </div>
+      )}
+    </>
+  );
 }
 
 export function Dashboard() {
@@ -28,7 +175,8 @@ export function Dashboard() {
   const toast = useToast();
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [overview, setOverview] = useState<Overview | null>(null);
+  const [executiveOverview, setExecutiveOverview] = useState<ExecutiveOverview | null>(null);
+  const [teamOverview, setTeamOverview] = useState<TeamOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [queuedCount, setQueuedCount] = useState(0);
@@ -54,7 +202,11 @@ export function Dashboard() {
 
   useEffect(() => {
     loadAttendance();
-    if (can("analytics.view_all")) api.get<Overview>("/analytics/overview").then(setOverview).catch(() => {});
+    if (can("analytics.view_all")) {
+      api.get<ExecutiveOverview>("/analytics/overview").then(setExecutiveOverview).catch(() => {});
+    } else if (can("attendance.view_team")) {
+      api.get<TeamOverview>("/analytics/team-overview").then(setTeamOverview).catch(() => {});
+    }
     flush();
     window.addEventListener("online", flush);
     return () => window.removeEventListener("online", flush);
@@ -102,26 +254,8 @@ export function Dashboard() {
       {error && <div className="error-banner">{error}</div>}
       {queuedCount > 0 && <p className="muted">{queuedCount} punch(es) queued offline, waiting to sync.</p>}
 
-      {overview && (
-        <div className="stat-grid" style={{ marginBottom: 20 }}>
-          <div className="stat">
-            <div className="value">{overview.employees.active}</div>
-            <div className="label">Active employees</div>
-          </div>
-          <div className="stat">
-            <div className="value">{overview.pendingAttendanceExceptions}</div>
-            <div className="label">Attendance exceptions</div>
-          </div>
-          <div className="stat">
-            <div className="value">{overview.pendingLeaveRequests}</div>
-            <div className="label">Pending leave requests</div>
-          </div>
-          <div className="stat">
-            <div className="value">{overview.pendingExits}</div>
-            <div className="label">Exits in progress</div>
-          </div>
-        </div>
-      )}
+      {executiveOverview && <ExecutiveOverviewSection data={executiveOverview} />}
+      {!executiveOverview && teamOverview && <ManagerOverviewSection data={teamOverview} />}
 
       <div className="card">
         <h2>My attendance today</h2>
