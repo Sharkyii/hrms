@@ -16,6 +16,7 @@ import {
   kraRatings,
   assetAssignments,
   assets,
+  workLogEntries,
 } from "../db/schema";
 import { computePayableDays } from "../lib/payroll-engine";
 import { requireAuth, requirePermission } from "../middleware/auth";
@@ -152,9 +153,18 @@ app.get("/:id/profile", async (c) => {
     .where(and(eq(assetAssignments.employeeId, id), isNull(assetAssignments.returnedAt)))
     .all();
 
+  const workLog = await db
+    .select()
+    .from(workLogEntries)
+    .where(eq(workLogEntries.employeeId, id))
+    .orderBy(desc(workLogEntries.date), desc(workLogEntries.id))
+    .limit(30)
+    .all();
+
   return c.json({
     employee,
     managerName: manager?.fullName ?? null,
+    isSelf,
     attendance: {
       thisMonthSummary,
       recent: recentAttendance,
@@ -166,6 +176,7 @@ app.get("/:id/profile", async (c) => {
       recent: recentLeave,
     },
     assets: assignedAssets.map((a) => a.asset),
+    workLog,
   });
 });
 

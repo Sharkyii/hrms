@@ -57,6 +57,16 @@ export const policies = sqliteTable("policies", {
   publishedAt: text("published_at").notNull().default(sql`(current_timestamp)`),
 });
 
+// Self-reported daily work log — the non-surveillance alternative to activity tracking:
+// each employee logs what they worked on themselves, visible to their manager/HR/founder.
+export const workLogEntries = sqliteTable("work_log_entries", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  employeeId: integer("employee_id").notNull().references(() => employees.id),
+  date: text("date").notNull(),
+  tasks: text("tasks").notNull(),
+  createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
+});
+
 export const employeeQueries = sqliteTable("employee_queries", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   employeeId: integer("employee_id").notNull().references(() => employees.id),

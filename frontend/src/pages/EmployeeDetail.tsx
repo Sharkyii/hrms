@@ -43,9 +43,15 @@ interface Asset {
   name: string;
   category: string | null;
 }
+interface WorkLogEntry {
+  id: number;
+  date: string;
+  tasks: string;
+}
 interface Profile {
   employee: Employee;
   managerName: string | null;
+  isSelf: boolean;
   attendance: {
     thisMonthSummary: { presentDays: number; halfDays: number; paidLeaveDays: number; lopDays: number; holidayDays: number; payableDays: number; otHours: number };
     recent: AttendanceRecord[];
@@ -54,6 +60,7 @@ interface Profile {
   kra: { cycleName: string | null; goals: KraGoal[] };
   leave: { balances: Array<{ leaveType: string; allocated: number; used: number }>; recent: LeaveRequest[] };
   assets: Asset[];
+  workLog: WorkLogEntry[];
 }
 
 export function EmployeeDetail() {
@@ -62,16 +69,36 @@ export function EmployeeDetail() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [logDate, setLogDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [logTasks, setLogTasks] = useState("");
+  const [savingLog, setSavingLog] = useState(false);
 
-  useEffect(() => {
+  function load() {
     setLoading(true);
     setError(null);
-    api
+    return api
       .get<Profile>(`/employees/${id}/profile`)
       .then(setProfile)
       .catch((err) => setError(err instanceof ApiError ? err.message : "Failed to load"))
       .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  async function addLogEntry() {
+    if (!logTasks.trim()) return;
+    setSavingLog(true);
+    try {
+      await api.post("/worklog", { date: logDate, tasks: logTasks.trim() });
+      setLogTasks("");
+      await load();
+    } finally {
+      setSavingLog(false);
+    }
+  }
 
   if (loading) return <div><div className="page-header"><h1>Employee</h1></div><Spinner /></div>;
   if (error) return <div><div className="page-header"><h1>Employee</h1></div><div className="error-banner">{error}</div></div>;
@@ -122,6 +149,47 @@ export function EmployeeDetail() {
                     <td>{r.method.replace(/_/g, " ")}</td>
                     <td><Badge value={r.confidence} /></td>
                     <td><Badge value={r.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>Work log</h2>
+        {profile.isSelf && (
+          <div className="form-row" style={{ marginBottom: 16, alignItems: "flex-end" }}>
+            <div className="field">
+              <label>Date</label>
+              <input type="date" value={logDate} onChange={(e) => setLogDate(e.target.value)} />
+            </div>
+            <div className="field" style={{ flex: 1 }}>
+              <label>What did you work on?</label>
+              <input
+                placeholder="e.g. Fixed checkout bug, reviewed vendor invoices..."
+                value={logTasks}
+                onChange={(e) => setLogTasks(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addLogEntry()}
+              />
+            </div>
+            <button className="btn" onClick={addLogEntry} disabled={savingLog || !logTasks.trim()}>
+              {savingLog ? "Saving..." : "Add"}
+            </button>
+          </div>
+        )}
+        {profile.workLog.length === 0 ? (
+          <p className="empty">No work log entries yet.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Date</th><th>Tasks</th></tr></thead>
+              <tbody>
+                {profile.workLog.map((w) => (
+                  <tr key={w.id}>
+                    <td style={{ whiteSpace: "nowrap" }}>{w.date}</td>
+                    <td>{w.tasks}</td>
                   </tr>
                 ))}
               </tbody>
