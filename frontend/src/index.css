@@ -79,6 +79,7 @@ th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--bor
 th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--border-strong); position: sticky; top: 0; background: var(--panel); }
 tbody tr { transition: background 0.1s ease; }
 tbody tr:hover { background: var(--fill-soft); }
+tbody tr.selected-row { background: var(--fill-soft); font-weight: 600; }
 
 .btn {
   display: inline-flex;

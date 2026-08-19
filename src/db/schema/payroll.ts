@@ -9,6 +9,7 @@ export const salaryStructures = sqliteTable("salary_structures", {
   hra: real("hra").notNull().default(0),
   effectiveFrom: text("effective_from").notNull(),
   effectiveTo: text("effective_to"),
+  updatedByUserId: integer("updated_by_user_id").references(() => users.id),
 });
 
 export const employeeBankDetails = sqliteTable("employee_bank_details", {

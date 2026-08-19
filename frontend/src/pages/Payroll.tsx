@@ -467,29 +467,105 @@ interface PayrollDetails {
   function: string | null;
   location: string | null;
 }
+interface SalaryRosterRow {
+  employeeId: number;
+  employeeName: string;
+  employeeCode: string;
+  status: string;
+  basic: number | null;
+  hra: number | null;
+  componentsTotal: number;
+  ctc: number | null;
+  effectiveFrom: string | null;
+  updatedByName: string | null;
+}
+interface SalaryComponentRow {
+  id: number;
+  name: string;
+  type: "earning" | "deduction";
+  amount: number;
+}
+interface SalaryChangeLogRow {
+  id: number;
+  fieldChanged: string;
+  oldValue: string | null;
+  newValue: string;
+  reason: string | null;
+  changedAt: string;
+  changedByName: string;
+}
+interface SalaryDetail {
+  current: { basic: number; hra: number; effectiveFrom: string } | null;
+  components: SalaryComponentRow[];
+  changeLog: SalaryChangeLogRow[];
+}
 
 function Structures() {
   const toast = useToast();
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [form, setForm] = useState({ employeeId: "", basic: "", hra: "", effectiveFrom: "" });
+  const [roster, setRoster] = useState<SalaryRosterRow[]>([]);
+  const [rosterLoading, setRosterLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState("");
+  const [detail, setDetail] = useState<SalaryDetail | null>(null);
+  const [form, setForm] = useState({ basic: "", hra: "", effectiveFrom: new Date().toISOString().slice(0, 10), reason: "" });
+  const [components, setComponents] = useState<Array<{ name: string; type: "earning" | "deduction"; amount: string }>>([]);
+  const [saving, setSaving] = useState(false);
+
   const [bank, setBank] = useState({ employeeId: "", accountHolderName: "", accountNumber: "", ifsc: "", bankName: "" });
   const [detailsEmployeeId, setDetailsEmployeeId] = useState("");
   const [details, setDetails] = useState<PayrollDetails>({
     panNumber: "", uanNumber: "", pfAccountNumber: "", esiNumber: "", pranNumber: "", taxRegime: "", function: "", location: "",
   });
 
+  async function loadRoster() {
+    setRosterLoading(true);
+    setRoster(await api.get<SalaryRosterRow[]>("/payroll/salary-roster"));
+    setRosterLoading(false);
+  }
+
   useEffect(() => {
     api.get<Employee[]>("/employees").then(setEmployees);
+    loadRoster();
   }, []);
 
+  async function selectEmployee(employeeId: string) {
+    setSelectedId(employeeId);
+    setDetail(null);
+    setForm({ basic: "", hra: "", effectiveFrom: new Date().toISOString().slice(0, 10), reason: "" });
+    setComponents([]);
+    if (!employeeId) return;
+    const full = await api.get<SalaryDetail>(`/payroll/salary-structures/${employeeId}/full`);
+    setDetail(full);
+    if (full.current) {
+      setForm({ basic: String(full.current.basic), hra: String(full.current.hra), effectiveFrom: new Date().toISOString().slice(0, 10), reason: "" });
+      setComponents(full.components.map((c) => ({ name: c.name, type: c.type, amount: String(c.amount) })));
+    }
+  }
+
+  function updateComponent(i: number, patch: Partial<{ name: string; type: "earning" | "deduction"; amount: string }>) {
+    setComponents(components.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+  }
+
   async function saveStructure() {
-    await api.post("/payroll/salary-structures", {
-      employeeId: Number(form.employeeId),
-      basic: Number(form.basic),
-      hra: Number(form.hra || 0),
-      effectiveFrom: form.effectiveFrom,
-    });
-    toast.success("Salary structure saved.");
+    if (!selectedId || form.basic === "" || !form.effectiveFrom) return;
+    setSaving(true);
+    try {
+      await api.post("/payroll/salary-structures", {
+        employeeId: Number(selectedId),
+        basic: Number(form.basic),
+        hra: Number(form.hra || 0),
+        effectiveFrom: form.effectiveFrom,
+        reason: form.reason.trim() || undefined,
+        components: components
+          .filter((c) => c.name.trim() && c.amount !== "")
+          .map((c) => ({ name: c.name.trim(), type: c.type, amount: Number(c.amount) })),
+      });
+      toast.success("Salary structure saved.");
+      await loadRoster();
+      await selectEmployee(selectedId);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function saveBank() {
@@ -512,22 +588,91 @@ function Structures() {
   return (
     <div>
       <div className="card">
-        <h2>Salary structure</h2>
-        <p className="muted">Basic, HRA, and any recurring allowances — set once, applies every run. Loan and TDS are entered per run under Team Payroll / Runs since those change month to month.</p>
-        <div className="form-row">
-          <div className="field">
-            <label>Employee</label>
-            <select value={form.employeeId} onChange={(e) => setForm({ ...form, employeeId: e.target.value })}>
-              <option value="">Select...</option>
-              {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
-            </select>
+        <h2>Salary — every employee</h2>
+        <p className="muted">Basic, HRA, and any recurring allowances, per employee. Visible to Founder and HR only. Click a row to view full detail and edit.</p>
+        {rosterLoading ? (
+          <Spinner />
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Employee</th><th>Basic</th><th>HRA</th><th>Other</th><th>CTC / month</th><th>Effective from</th><th>Last updated by</th></tr>
+              </thead>
+              <tbody>
+                {roster.map((r) => (
+                  <tr key={r.employeeId} onClick={() => selectEmployee(String(r.employeeId))} style={{ cursor: "pointer" }} className={String(r.employeeId) === selectedId ? "selected-row" : ""}>
+                    <td>{r.employeeName} <span className="muted">— {r.employeeCode}</span></td>
+                    <td>{r.basic?.toFixed(2) ?? "—"}</td>
+                    <td>{r.hra?.toFixed(2) ?? "—"}</td>
+                    <td>{r.componentsTotal ? r.componentsTotal.toFixed(2) : "—"}</td>
+                    <td><strong>{r.ctc?.toFixed(2) ?? "Not set"}</strong></td>
+                    <td>{r.effectiveFrom ?? "—"}</td>
+                    <td>{r.updatedByName ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div className="field"><label>Basic</label><input type="number" value={form.basic} onChange={(e) => setForm({ ...form, basic: e.target.value })} /></div>
-          <div className="field"><label>HRA</label><input type="number" value={form.hra} onChange={(e) => setForm({ ...form, hra: e.target.value })} /></div>
-          <div className="field"><label>Effective from</label><input type="date" value={form.effectiveFrom} onChange={(e) => setForm({ ...form, effectiveFrom: e.target.value })} /></div>
-        </div>
-        <button className="btn" onClick={saveStructure}>Save structure</button>
+        )}
       </div>
+
+      {selectedId && (
+        <div className="card">
+          <h2>Edit salary — {employees.find((e) => e.id === Number(selectedId))?.fullName}</h2>
+          <div className="form-row">
+            <div className="field"><label>Basic</label><input type="number" value={form.basic} onChange={(e) => setForm({ ...form, basic: e.target.value })} /></div>
+            <div className="field"><label>HRA</label><input type="number" value={form.hra} onChange={(e) => setForm({ ...form, hra: e.target.value })} /></div>
+            <div className="field"><label>Effective from</label><input type="date" value={form.effectiveFrom} onChange={(e) => setForm({ ...form, effectiveFrom: e.target.value })} /></div>
+          </div>
+          <div className="field">
+            <label>Reason for change (kept in the log)</label>
+            <input placeholder="e.g. annual increment, role change..." value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />
+          </div>
+
+          <h3 style={{ marginTop: 16 }}>Other components</h3>
+          {components.map((c, i) => (
+            <div className="form-row" key={i} style={{ alignItems: "flex-end" }}>
+              <div className="field"><label>Name</label><input value={c.name} onChange={(e) => updateComponent(i, { name: e.target.value })} /></div>
+              <div className="field">
+                <label>Type</label>
+                <select value={c.type} onChange={(e) => updateComponent(i, { type: e.target.value as "earning" | "deduction" })}>
+                  <option value="earning">Earning</option>
+                  <option value="deduction">Deduction</option>
+                </select>
+              </div>
+              <div className="field"><label>Amount</label><input type="number" value={c.amount} onChange={(e) => updateComponent(i, { amount: e.target.value })} /></div>
+              <button className="btn secondary" onClick={() => setComponents(components.filter((_, idx) => idx !== i))}>Remove</button>
+            </div>
+          ))}
+          <button className="btn secondary" onClick={() => setComponents([...components, { name: "", type: "earning", amount: "" }])}>+ Add component</button>
+          <div style={{ marginTop: 16 }}>
+            <button className="btn" onClick={saveStructure} disabled={saving}>{saving ? "Saving..." : "Save salary structure"}</button>
+          </div>
+
+          <h3 style={{ marginTop: 24 }}>Change history</h3>
+          {!detail || detail.changeLog.length === 0 ? (
+            <p className="empty">No changes logged yet — this is the first structure set for this employee.</p>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Date</th><th>Field</th><th>Old</th><th>New</th><th>Changed by</th><th>Reason</th></tr></thead>
+                <tbody>
+                  {detail.changeLog.map((l) => (
+                    <tr key={l.id}>
+                      <td>{new Date(l.changedAt).toLocaleString()}</td>
+                      <td>{l.fieldChanged}</td>
+                      <td>{l.oldValue ?? "—"}</td>
+                      <td>{l.newValue}</td>
+                      <td>{l.changedByName}</td>
+                      <td>{l.reason ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card">
         <h2>Bank details</h2>

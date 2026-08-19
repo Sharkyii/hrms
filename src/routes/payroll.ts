@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../db/client";
 import type { Db } from "../db/client";
 import {
@@ -20,9 +20,12 @@ import {
   employees,
   leaveBalances,
   leaveTypes,
+  correctionAuditLog,
+  users,
 } from "../db/schema";
 import { computePayableDays, computeEarnings, computeStatutory, STANDARD_WORKING_DAYS_PER_MONTH } from "../lib/payroll-engine";
 import { generatePayslipPdf } from "../lib/payslip-pdf";
+import { recordCorrection } from "../lib/audit";
 import { requireAuth, requirePermission } from "../middleware/auth";
 import type { SessionPayload } from "../middleware/auth";
 import type { Env } from "../types";
@@ -38,27 +41,84 @@ async function isTeamMember(db: Db, managerEmployeeId: number, targetEmployeeId:
 }
 
 // --- Salary structures ---
+// Every save is a new version — the previous one is closed off (effectiveTo) rather than edited,
+// and the diff is written to correction_audit_log so there's always a full who/when/old->new trail.
 app.post("/salary-structures", requirePermission("payroll.process"), async (c) => {
+  const session = c.get("session");
   const body = await c.req.json<{
     employeeId?: number;
     basic?: number;
     hra?: number;
     effectiveFrom?: string;
+    reason?: string;
     components?: Array<{ name: string; type: "earning" | "deduction"; amount: number }>;
   }>();
   if (!body.employeeId || body.basic === undefined || !body.effectiveFrom) {
     return c.json({ error: "employeeId, basic, and effectiveFrom are required" }, 400);
   }
   const db = getDb(c.env.DB);
+
+  const previous = await db
+    .select()
+    .from(salaryStructures)
+    .where(eq(salaryStructures.employeeId, body.employeeId))
+    .orderBy(salaryStructures.effectiveFrom)
+    .all();
+  const activePrev = previous.at(-1);
+
   const created = await db
     .insert(salaryStructures)
-    .values({ employeeId: body.employeeId, basic: body.basic, hra: body.hra ?? 0, effectiveFrom: body.effectiveFrom })
+    .values({
+      employeeId: body.employeeId,
+      basic: body.basic,
+      hra: body.hra ?? 0,
+      effectiveFrom: body.effectiveFrom,
+      updatedByUserId: session.sub,
+    })
     .returning()
     .get();
 
   for (const comp of body.components ?? []) {
     await db.insert(salaryComponents).values({ structureId: created.id, name: comp.name, type: comp.type, amount: comp.amount }).run();
   }
+
+  if (activePrev) {
+    const dayBefore = new Date(new Date(body.effectiveFrom).getTime() - 86400000).toISOString().slice(0, 10);
+    await db.update(salaryStructures).set({ effectiveTo: dayBefore }).where(eq(salaryStructures.id, activePrev.id)).run();
+    if (activePrev.basic !== created.basic) {
+      await recordCorrection(db, {
+        entityType: "salary_structure",
+        entityId: body.employeeId,
+        actorUserId: session.sub,
+        fieldChanged: "basic",
+        oldValue: String(activePrev.basic),
+        newValue: String(created.basic),
+        reason: body.reason,
+      });
+    }
+    if (activePrev.hra !== created.hra) {
+      await recordCorrection(db, {
+        entityType: "salary_structure",
+        entityId: body.employeeId,
+        actorUserId: session.sub,
+        fieldChanged: "hra",
+        oldValue: String(activePrev.hra),
+        newValue: String(created.hra),
+        reason: body.reason,
+      });
+    }
+  } else {
+    await recordCorrection(db, {
+      entityType: "salary_structure",
+      entityId: body.employeeId,
+      actorUserId: session.sub,
+      fieldChanged: "basic",
+      oldValue: null,
+      newValue: String(created.basic),
+      reason: body.reason ?? "Initial salary structure set",
+    });
+  }
+
   return c.json(created, 201);
 });
 
@@ -66,6 +126,78 @@ app.get("/salary-structures/:employeeId", requirePermission("payroll.process"), 
   const employeeId = Number(c.req.param("employeeId"));
   const db = getDb(c.env.DB);
   return c.json(await db.select().from(salaryStructures).where(eq(salaryStructures.employeeId, employeeId)).all());
+});
+
+// Everything Founder/HR need to see for one employee's salary: current figures + itemized
+// components + the full audit trail of who changed what and when.
+app.get("/salary-structures/:employeeId/full", requirePermission("payroll.process"), async (c) => {
+  const employeeId = Number(c.req.param("employeeId"));
+  const db = getDb(c.env.DB);
+
+  const all = await db
+    .select()
+    .from(salaryStructures)
+    .where(eq(salaryStructures.employeeId, employeeId))
+    .orderBy(salaryStructures.effectiveFrom)
+    .all();
+  const current = all.at(-1) ?? null;
+  const components = current ? await db.select().from(salaryComponents).where(eq(salaryComponents.structureId, current.id)).all() : [];
+
+  const logRows = await db
+    .select({ log: correctionAuditLog, actorEmployee: employees })
+    .from(correctionAuditLog)
+    .innerJoin(users, eq(correctionAuditLog.actorUserId, users.id))
+    .innerJoin(employees, eq(users.employeeId, employees.id))
+    .where(and(eq(correctionAuditLog.entityType, "salary_structure"), eq(correctionAuditLog.entityId, employeeId)))
+    .orderBy(desc(correctionAuditLog.changedAt))
+    .all();
+
+  return c.json({
+    current,
+    components,
+    changeLog: logRows.map((r) => ({
+      id: r.log.id,
+      fieldChanged: r.log.fieldChanged,
+      oldValue: r.log.oldValue,
+      newValue: r.log.newValue,
+      reason: r.log.reason,
+      changedAt: r.log.changedAt,
+      changedByName: r.actorEmployee.fullName,
+    })),
+  });
+});
+
+// One row per employee with their current base salary — the roster view for Founder/HR.
+app.get("/salary-roster", requirePermission("payroll.process"), async (c) => {
+  const db = getDb(c.env.DB);
+  const allEmployees = await db.select().from(employees).all();
+  const allStructures = await db.select().from(salaryStructures).orderBy(salaryStructures.effectiveFrom).all();
+  const allComponents = await db.select().from(salaryComponents).all();
+  const allUsers = await db.select().from(users).all();
+
+  const rows = allEmployees.map((emp) => {
+    const structuresForEmp = allStructures.filter((s) => s.employeeId === emp.id);
+    const current = structuresForEmp.at(-1) ?? null;
+    const componentsTotal = current
+      ? allComponents.filter((c) => c.structureId === current.id).reduce((sum, c) => sum + (c.type === "earning" ? c.amount : -c.amount), 0)
+      : 0;
+    const updatedByUser = current?.updatedByUserId ? allUsers.find((u) => u.id === current.updatedByUserId) : null;
+    const updatedByEmployee = updatedByUser ? allEmployees.find((e) => e.id === updatedByUser.employeeId) : null;
+    return {
+      employeeId: emp.id,
+      employeeName: emp.fullName,
+      employeeCode: emp.employeeCode,
+      status: emp.status,
+      basic: current?.basic ?? null,
+      hra: current?.hra ?? null,
+      componentsTotal,
+      ctc: current ? current.basic + current.hra + componentsTotal : null,
+      effectiveFrom: current?.effectiveFrom ?? null,
+      updatedByName: updatedByEmployee?.fullName ?? null,
+    };
+  });
+
+  return c.json(rows);
 });
 
 // --- Statutory settings (single active row; HR/Founder update as government rates change) ---
