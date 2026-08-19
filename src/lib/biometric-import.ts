@@ -10,18 +10,27 @@ export interface RawPunchRow {
 export interface ParsedFile {
   rows: RawPunchRow[];
   unmappedColumnCount: number;
-  sourceFormat: "vendor_exception_stat" | "generic";
+  sourceFormat: "vendor_exception_stat" | "vendor_att_log" | "generic";
+  detectedColumns?: string[]; // for diagnostics when parsing fails
+}
+
+export class BiometricParseError extends Error {
+  detectedColumns: string[];
+  constructor(message: string, detectedColumns: string[]) {
+    super(message);
+    this.detectedColumns = detectedColumns;
+  }
 }
 
 function cellStr(v: unknown): string {
   return v === undefined || v === null ? "" : String(v).trim();
 }
 
-// Combines a date string ("2026-07-01") with a time string ("09:19") into an ISO datetime.
-// Returns null if either half is missing/unparseable — used to skip half-punched days.
+// Combines a date string ("2026-07-01") with a time string ("09:19" or "09:19:00") into an ISO
+// datetime. Returns null if either half is missing/unparseable — used to skip half-punched days.
 function combineDateTime(dateStr: string, timeStr: string): string | null {
   if (!dateStr || !timeStr) return null;
-  const timeMatch = timeStr.match(/^(\d{1,2}):(\d{2})/);
+  const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})/);
   if (!timeMatch) return null;
   const parsed = new Date(dateStr);
   if (isNaN(parsed.getTime())) return null;
@@ -62,23 +71,88 @@ function parseVendorExceptionSheet(sheet: XLSX.WorkSheet): RawPunchRow[] | null 
   return rows;
 }
 
-// Generic fallback for simpler flat exports: a single header row with User/Card ID, DateTime, and
-// In/Out columns matched by header text (order doesn't matter). Re-map aliases here as needed.
-const USER_CODE_ALIASES = ["userid", "user id", "cardno", "card no", "employeeid", "employee id", "empcode", "id", "device user id"];
-const DATETIME_ALIASES = ["datetime", "date time", "timestamp", "punch time", "date & time"];
-const IN_OUT_ALIASES = ["inout", "in/out", "status", "direction", "punch type"];
+// Same vendor software's raw "Attendance Record Report" sheet (e.g. "Att.log report") — a block
+// format, not a normal table: each employee occupies two rows (an "ID:.../Name:.../Dept.:..." header
+// row, then a data row with one cell per day-of-month), and each day's cell is every punch that day
+// concatenated with no separator, e.g. "09:1918:33" = two punches, "09:3113:0518:34" = three. This is
+// messier than the Exception Stat. sheet but present even when Exception Stat. is empty/absent —
+// tried second, only if the Exception Stat. sheet didn't yield any rows.
+function parseVendorAttLogSheet(sheet: XLSX.WorkSheet): RawPunchRow[] | null {
+  const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: "" });
+  if (grid.length < 6) return null;
 
-function classifyColumn(header: string): "userCode" | "datetime" | "inOut" | null {
-  const normalized = header.trim().toLowerCase().replace(/\s+/g, " ");
-  if (USER_CODE_ALIASES.includes(normalized)) return "userCode";
-  if (DATETIME_ALIASES.includes(normalized)) return "datetime";
-  if (IN_OUT_ALIASES.includes(normalized)) return "inOut";
+  let periodStart: string | null = null;
+  for (let i = 0; i < Math.min(grid.length, 5) && !periodStart; i++) {
+    for (const cell of grid[i]) {
+      const match = cellStr(cell).match(/(\d{4}-\d{2}-\d{2})\s*~\s*\d{4}-\d{2}-\d{2}/);
+      if (match) periodStart = match[1];
+    }
+  }
+  if (!periodStart) return null;
+
+  const dayHeaderRowIndex = grid.findIndex((row) => cellStr(row?.[0]) === "1" && cellStr(row?.[1]) === "2");
+  if (dayHeaderRowIndex === -1) return null;
+
+  const rows: RawPunchRow[] = [];
+  for (let i = dayHeaderRowIndex + 1; i < grid.length - 1; i += 2) {
+    const headerRow = grid[i]?.map(cellStr) ?? [];
+    const dataRow = grid[i + 1] ?? [];
+    const idIndex = headerRow.findIndex((c) => c.toUpperCase() === "ID:");
+    const nameIndex = headerRow.findIndex((c) => c.toUpperCase() === "NAME:");
+    if (idIndex === -1) continue;
+    const id = headerRow[idIndex + 2] ?? "";
+    const name = nameIndex !== -1 ? headerRow[nameIndex + 2] ?? "" : "";
+    if (!id) continue;
+
+    for (let day = 0; day < dataRow.length; day++) {
+      const cell = cellStr(dataRow[day]);
+      if (!cell) continue;
+      const times = cell.match(/\d{1,2}:\d{2}/g);
+      if (!times || times.length === 0) continue;
+
+      const date = new Date(periodStart);
+      date.setDate(date.getDate() + day);
+      const dateStr = date.toISOString().slice(0, 10);
+
+      const inIso = combineDateTime(dateStr, times[0]);
+      if (inIso) rows.push({ deviceUserCode: id, employeeName: name || undefined, punchDatetime: inIso, inOut: "in" });
+      if (times.length > 1) {
+        const outIso = combineDateTime(dateStr, times[times.length - 1]);
+        if (outIso) rows.push({ deviceUserCode: id, employeeName: name || undefined, punchDatetime: outIso, inOut: "out" });
+      }
+    }
+  }
+  return rows;
+}
+
+// Generic fallback for flat exports. Deliberately loose matching (substring, not exact) since real
+// files vary a lot: "Emp ID" vs "Employee Code" vs "Card No", "Date"+"Time" split across two columns
+// vs one combined "DateTime", "In Time"/"Out Time" as two columns vs a single "In/Out" flag column.
+type ColumnRole = "userCode" | "name" | "datetime" | "date" | "time" | "inTime" | "outTime" | "inOut";
+
+const COLUMN_PATTERNS: Array<{ role: ColumnRole; test: (h: string) => boolean }> = [
+  { role: "inTime", test: (h) => /\bin\b/.test(h) && /time|punch/.test(h) },
+  { role: "outTime", test: (h) => /\bout\b/.test(h) && /time|punch/.test(h) },
+  { role: "datetime", test: (h) => /date\s*&?\s*time|timestamp|punch\s*time/.test(h) },
+  { role: "date", test: (h) => /date/.test(h) },
+  { role: "time", test: (h) => /time/.test(h) },
+  { role: "inOut", test: (h) => /in\s*\/?\s*out|^status$|direction|punch\s*type/.test(h) },
+  { role: "userCode", test: (h) => /user\s*id|card\s*no|emp\w*\s*(id|code)|device\s*user/.test(h) },
+  { role: "name", test: (h) => /^name$|employee\s*name/.test(h) },
+];
+
+function classifyColumn(header: string): ColumnRole | null {
+  const normalized = header.trim().toLowerCase().replace(/[_.]/g, " ").replace(/\s+/g, " ");
+  if (!normalized) return null;
+  for (const { role, test } of COLUMN_PATTERNS) {
+    if (test(normalized)) return role;
+  }
   return null;
 }
 
 function parseInOut(value: string): "in" | "out" | "unknown" {
   const s = value.trim().toLowerCase();
-  if (["in", "i", "check-in", "checkin", "entry"].includes(s)) return "in";
+  if (["in", "i", "check-in", "checkin", "entry", "p"].includes(s)) return "in";
   if (["out", "o", "check-out", "checkout", "exit"].includes(s)) return "out";
   return "unknown";
 }
@@ -89,35 +163,62 @@ function parseDatetime(value: string): string | null {
   return isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
-function parseGenericSheet(sheet: XLSX.WorkSheet): { rows: RawPunchRow[]; unmappedColumnCount: number } {
+function parseGenericSheet(sheet: XLSX.WorkSheet): { rows: RawPunchRow[]; unmappedColumnCount: number; detectedColumns: string[] } {
   const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: "" });
-  if (grid.length === 0) return { rows: [], unmappedColumnCount: 0 };
+  if (grid.length === 0) return { rows: [], unmappedColumnCount: 0, detectedColumns: [] };
 
   const headerRow = grid[0].map(cellStr);
   const columnRoles = headerRow.map(classifyColumn);
   const unmappedColumnCount = headerRow.filter((h, i) => h && !columnRoles[i]).length;
+  const detectedColumns = headerRow.map((h, i) => `${h || `(col ${i + 1})`} → ${columnRoles[i] ?? "unrecognized"}`);
 
   const rows: RawPunchRow[] = [];
   for (let i = 1; i < grid.length; i++) {
     const dataRow = grid[i];
     let userCode = "";
-    let datetime: string | null = null;
+    let name = "";
+    let datetime = "";
+    let date = "";
+    let time = "";
+    let inTime = "";
+    let outTime = "";
     let inOut: "in" | "out" | "unknown" = "unknown";
 
     columnRoles.forEach((role, colIndex) => {
-      const cellValue = cellStr(dataRow[colIndex]);
-      if (role === "userCode") userCode = cellValue;
-      if (role === "datetime") datetime = parseDatetime(cellValue);
-      if (role === "inOut") inOut = parseInOut(cellValue);
+      const v = cellStr(dataRow[colIndex]);
+      if (role === "userCode") userCode = v;
+      if (role === "name") name = v;
+      if (role === "datetime") datetime = v;
+      if (role === "date") date = v;
+      if (role === "time") time = v;
+      if (role === "inTime") inTime = v;
+      if (role === "outTime") outTime = v;
+      if (role === "inOut") inOut = parseInOut(v);
     });
 
-    if (userCode && datetime) rows.push({ deviceUserCode: userCode, punchDatetime: datetime, inOut });
+    if (!userCode) continue;
+
+    // Layout: separate In Time / Out Time columns — one row = up to two punches for that person/day.
+    if (inTime || outTime) {
+      const day = date || datetime;
+      const inIso = combineDateTime(day, inTime);
+      const outIso = combineDateTime(day, outTime);
+      if (inIso) rows.push({ deviceUserCode: userCode, employeeName: name || undefined, punchDatetime: inIso, inOut: "in" });
+      if (outIso) rows.push({ deviceUserCode: userCode, employeeName: name || undefined, punchDatetime: outIso, inOut: "out" });
+      continue;
+    }
+
+    // Layout: one combined DateTime column, or separate Date + Time columns, plus an In/Out flag.
+    const resolvedDatetime = parseDatetime(datetime) ?? (date && time ? combineDateTime(date, time) : null) ?? parseDatetime(date);
+    if (resolvedDatetime) rows.push({ deviceUserCode: userCode, employeeName: name || undefined, punchDatetime: resolvedDatetime, inOut });
   }
-  return { rows, unmappedColumnCount };
+
+  return { rows, unmappedColumnCount, detectedColumns };
 }
 
 export async function parseBiometricWorkbook(buffer: ArrayBuffer): Promise<ParsedFile> {
   const workbook = XLSX.read(buffer, { type: "array" });
+  if (workbook.SheetNames.length === 0) throw new BiometricParseError("The file has no readable sheet.", []);
 
   const exceptionSheetName = workbook.SheetNames.find((name) => /exception/i.test(name) && /stat/i.test(name));
   if (exceptionSheetName) {
@@ -127,9 +228,29 @@ export async function parseBiometricWorkbook(buffer: ArrayBuffer): Promise<Parse
     }
   }
 
-  const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-  const { rows, unmappedColumnCount } = parseGenericSheet(firstSheet);
-  return { rows, unmappedColumnCount, sourceFormat: "generic" };
+  const logSheetName = workbook.SheetNames.find((name) => /att.*log|log.*report/i.test(name));
+  if (logSheetName) {
+    const vendorRows = parseVendorAttLogSheet(workbook.Sheets[logSheetName]);
+    if (vendorRows && vendorRows.length > 0) {
+      return { rows: vendorRows, unmappedColumnCount: 0, sourceFormat: "vendor_att_log" };
+    }
+  }
+
+  // Generic fallback: try every sheet (not just the first), keep whichever yields the most rows —
+  // exported workbooks often put punch data on a sheet other than the first.
+  let best: { rows: RawPunchRow[]; unmappedColumnCount: number; detectedColumns: string[]; sheetName: string } | null = null;
+  for (const name of workbook.SheetNames) {
+    const result = parseGenericSheet(workbook.Sheets[name]);
+    if (!best || result.rows.length > best.rows.length) best = { ...result, sheetName: name };
+  }
+
+  if (!best || best.rows.length === 0) {
+    throw new BiometricParseError(
+      `Could not find both a User/Card ID and a date/time in any row. Sheets in this file: ${workbook.SheetNames.join(", ")}.`,
+      best?.detectedColumns ?? [],
+    );
+  }
+  return { rows: best.rows, unmappedColumnCount: best.unmappedColumnCount, sourceFormat: "generic", detectedColumns: best.detectedColumns };
 }
 
 export function computeRowHash(deviceCode: string, row: RawPunchRow): string {

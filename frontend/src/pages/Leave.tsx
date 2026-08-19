@@ -5,6 +5,7 @@ import { Badge } from "../components/Badge";
 import { Spinner } from "../components/Spinner";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
+import type { Employee } from "../auth";
 
 interface LeaveType {
   id: number;
@@ -28,13 +29,17 @@ export function Leave() {
   const confirm = useConfirm();
   const [types, setTypes] = useState<LeaveType[]>([]);
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ leaveTypeId: "", startDate: "", endDate: "", reason: "" });
 
+  const seesOthers = can("leave.approve_team") || can("leave.view_all");
+
   async function load() {
     setTypes(await api.get<LeaveType[]>("/leave/types"));
     setRequests(await api.get<LeaveRequest[]>("/leave/requests"));
+    if (seesOthers) setEmployees(await api.get<Employee[]>("/employees"));
     setLoading(false);
   }
   useEffect(() => {
@@ -68,6 +73,7 @@ export function Leave() {
   }
 
   const typeName = (id: number) => types.find((t) => t.id === id)?.name ?? id;
+  const empName = (id: number) => employees.find((e) => e.id === id)?.fullName ?? `#${id}`;
 
   if (loading) return <div><h1>Leave</h1><Spinner /></div>;
 
@@ -111,11 +117,15 @@ export function Leave() {
         ) : (
           <table>
             <thead>
-              <tr><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Status</th>{can("leave.approve_team") && <th></th>}</tr>
+              <tr>
+                {seesOthers && <th>Employee</th>}
+                <th>Type</th><th>From</th><th>To</th><th>Days</th><th>Status</th>{can("leave.approve_team") && <th></th>}
+              </tr>
             </thead>
             <tbody>
               {requests.map((r) => (
                 <tr key={r.id}>
+                  {seesOthers && <td>{empName(r.employeeId)}</td>}
                   <td>{typeName(r.leaveTypeId)}</td>
                   <td>{r.startDate}</td>
                   <td>{r.endDate}</td>

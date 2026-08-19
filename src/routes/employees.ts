@@ -1,8 +1,23 @@
 import { Hono } from "hono";
-import { eq, or } from "drizzle-orm";
+import { eq, or, desc, and, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../db/client";
-import { employees, employeeTypeValues } from "../db/schema";
+import {
+  employees,
+  employeeTypeValues,
+  attendanceRecords,
+  payslips,
+  payrollRuns,
+  leaveBalances,
+  leaveRequests,
+  leaveTypes,
+  kraCycles,
+  kraGoals,
+  kraRatings,
+  assetAssignments,
+  assets,
+} from "../db/schema";
+import { computePayableDays } from "../lib/payroll-engine";
 import { requireAuth, requirePermission } from "../middleware/auth";
 import type { Env } from "../types";
 
@@ -54,6 +69,104 @@ app.get("/:id", async (c) => {
   if (!canViewAll && !canViewTeam && !isSelf) return c.json({ error: "Forbidden" }, 403);
 
   return c.json(row);
+});
+
+// One-stop employee profile: attendance summary + recent punches, payslips across every run,
+// current KRA goals/ratings, leave balances + recent requests, and assigned assets — everything
+// a founder/HR/manager wants when they click into one person, in a single call.
+app.get("/:id/profile", async (c) => {
+  const session = c.get("session");
+  const id = Number(c.req.param("id"));
+  const db = getDb(c.env.DB);
+
+  const employee = await db.select().from(employees).where(eq(employees.id, id)).get();
+  if (!employee) return c.json({ error: "Not found" }, 404);
+
+  const canViewAll = session.perms.includes("employee.view_all");
+  const canViewTeam = session.perms.includes("employee.view_team") && employee.reportingManagerId === session.employeeId;
+  const isSelf = employee.id === session.employeeId;
+  if (!canViewAll && !canViewTeam && !isSelf) return c.json({ error: "Forbidden" }, 403);
+
+  const manager = employee.reportingManagerId
+    ? await db.select().from(employees).where(eq(employees.id, employee.reportingManagerId)).get()
+    : null;
+
+  const now = new Date();
+  const thisMonthSummary = await computePayableDays(db, id, now.getFullYear(), now.getMonth() + 1);
+  const recentAttendance = await db
+    .select()
+    .from(attendanceRecords)
+    .where(eq(attendanceRecords.employeeId, id))
+    .orderBy(desc(attendanceRecords.date))
+    .limit(15)
+    .all();
+
+  const canViewSalary = session.perms.includes("payroll.view_salary_all") || isSelf || canViewTeam;
+  let payslipHistory: unknown[] = [];
+  if (canViewSalary) {
+    const rows = await db
+      .select({ payslip: payslips, run: payrollRuns })
+      .from(payslips)
+      .innerJoin(payrollRuns, eq(payslips.payrollRunId, payrollRuns.id))
+      .where(eq(payslips.employeeId, id))
+      .all();
+    payslipHistory = rows
+      .sort((a, b) => (a.run.year === b.run.year ? b.run.month - a.run.month : b.run.year - a.run.year))
+      .map((r) => ({
+        payslipId: r.payslip.id,
+        month: r.run.month,
+        year: r.run.year,
+        runStatus: r.run.status,
+        grossEarnings: r.payslip.grossEarnings,
+        netPay: r.payslip.netPay,
+      }));
+  }
+
+  const cycles = await db.select().from(kraCycles).all();
+  const openCycle = cycles.find((cy) => cy.status === "open") ?? cycles.at(-1) ?? null;
+  let kraGoalsWithRatings: unknown[] = [];
+  if (openCycle) {
+    const goals = await db.select().from(kraGoals).where(and(eq(kraGoals.employeeId, id), eq(kraGoals.cycleId, openCycle.id))).all();
+    const ratings = await db.select().from(kraRatings).all();
+    kraGoalsWithRatings = goals.map((g) => ({ ...g, rating: ratings.find((r) => r.goalId === g.id) ?? null }));
+  }
+
+  const balances = await db
+    .select({ balance: leaveBalances, type: leaveTypes })
+    .from(leaveBalances)
+    .innerJoin(leaveTypes, eq(leaveBalances.leaveTypeId, leaveTypes.id))
+    .where(and(eq(leaveBalances.employeeId, id), eq(leaveBalances.year, now.getFullYear())))
+    .all();
+  const recentLeave = await db
+    .select()
+    .from(leaveRequests)
+    .where(eq(leaveRequests.employeeId, id))
+    .orderBy(desc(leaveRequests.createdAt))
+    .limit(10)
+    .all();
+
+  const assignedAssets = await db
+    .select({ asset: assets, assignment: assetAssignments })
+    .from(assetAssignments)
+    .innerJoin(assets, eq(assetAssignments.assetId, assets.id))
+    .where(and(eq(assetAssignments.employeeId, id), isNull(assetAssignments.returnedAt)))
+    .all();
+
+  return c.json({
+    employee,
+    managerName: manager?.fullName ?? null,
+    attendance: {
+      thisMonthSummary,
+      recent: recentAttendance,
+    },
+    payslips: canViewSalary ? payslipHistory : null,
+    kra: { cycleName: openCycle?.name ?? null, goals: kraGoalsWithRatings },
+    leave: {
+      balances: balances.map((b) => ({ leaveType: b.type.name, allocated: b.balance.allocated, used: b.balance.used })),
+      recent: recentLeave,
+    },
+    assets: assignedAssets.map((a) => a.asset),
+  });
 });
 
 app.post("/", requirePermission("employee.manage"), async (c) => {

@@ -5,7 +5,7 @@ import { Badge } from "../components/Badge";
 import { useToast } from "../components/Toast";
 import type { Employee } from "../auth";
 
-interface Asset { id: number; assetCode: string; name: string; category: string | null; status: string }
+interface Asset { id: number; assetCode: string; name: string; category: string | null; status: string; assignedToName?: string | null }
 
 export function Assets() {
   const { can } = useAuth();
@@ -60,7 +60,7 @@ export function Assets() {
       <div className="card">
         <h2>{can("assets.manage") ? "All assets" : "My assets"}</h2>
         <table>
-          <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Status</th>{can("assets.manage") && <th></th>}</tr></thead>
+          <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Status</th>{can("assets.manage") && <th>Assigned to</th>}{can("assets.manage") && <th></th>}</tr></thead>
           <tbody>
             {assets.map((a) => (
               <tr key={a.id}>
@@ -68,6 +68,7 @@ export function Assets() {
                 <td>{a.name}</td>
                 <td>{a.category ?? "—"}</td>
                 <td><Badge value={a.status} /></td>
+                {can("assets.manage") && <td>{a.assignedToName ?? "—"}</td>}
                 {can("assets.manage") && (
                   <td>
                     {a.status === "available" ? (

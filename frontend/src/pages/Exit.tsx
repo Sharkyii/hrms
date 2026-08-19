@@ -4,6 +4,7 @@ import { api } from "../api";
 import { Badge } from "../components/Badge";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
+import type { Employee } from "../auth";
 
 interface ExitRequest { id: number; employeeId: number; resignationDate: string; lastWorkingDay: string; status: string }
 
@@ -12,11 +13,16 @@ export function Exit() {
   const toast = useToast();
   const confirm = useConfirm();
   const [requests, setRequests] = useState<ExitRequest[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [form, setForm] = useState({ resignationDate: "", lastWorkingDay: "", reason: "" });
   const [settlement, setSettlement] = useState<Record<number, { dues: string; deductions: string }>>({});
 
+  const canManage = can("exit.manage");
+  const empName = (id: number) => employees.find((e) => e.id === id)?.fullName ?? `#${id}`;
+
   async function load() {
     setRequests(await api.get<ExitRequest[]>("/exit/requests"));
+    if (canManage) setEmployees(await api.get<Employee[]>("/employees"));
   }
   useEffect(() => {
     load();
@@ -75,7 +81,7 @@ export function Exit() {
               <tbody>
                 {requests.map((r) => (
                   <tr key={r.id}>
-                    <td>{r.employeeId}</td>
+                    <td>{canManage ? empName(r.employeeId) : r.employeeId}</td>
                     <td>{r.resignationDate}</td>
                     <td>{r.lastWorkingDay}</td>
                     <td><Badge value={r.status} /></td>

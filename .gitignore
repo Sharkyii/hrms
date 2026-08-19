@@ -13,3 +13,6 @@ seed/seed.sql
 *.xls
 *.xlsx
 /*.pdf
+
+# One-off production org-import script with real hardcoded login credentials — local only, never in history.
+scripts/seed-org-production.sh

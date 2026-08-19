@@ -9,7 +9,7 @@ import {
   attendanceRecords,
   employees,
 } from "../db/schema";
-import { parseBiometricWorkbook, computeRowHash } from "../lib/biometric-import";
+import { parseBiometricWorkbook, computeRowHash, BiometricParseError } from "../lib/biometric-import";
 import { requireAuth, requirePermission } from "../middleware/auth";
 import type { Env } from "../types";
 
@@ -45,9 +45,19 @@ app.post("/import/preview", async (c) => {
   if (!device) return c.json({ error: `Unknown device code '${deviceCode}' — register the device first` }, 400);
 
   const buffer = await file.arrayBuffer();
-  const { rows, unmappedColumnCount, sourceFormat } = await parseBiometricWorkbook(buffer);
-  if (rows.length === 0) {
-    return c.json({ error: "No punch rows found — check the file has User ID, Timestamp, and In/Out columns" }, 400);
+  let rows, unmappedColumnCount, sourceFormat;
+  try {
+    ({ rows, unmappedColumnCount, sourceFormat } = await parseBiometricWorkbook(buffer));
+  } catch (err) {
+    if (err instanceof BiometricParseError) {
+      return c.json(
+        {
+          error: `${err.message} Detected columns: ${err.detectedColumns.length ? err.detectedColumns.join(", ") : "(none — is this a valid .xlsx export?)"}`,
+        },
+        400,
+      );
+    }
+    return c.json({ error: "Could not read this file as an Excel workbook (.xlsx)." }, 400);
   }
 
   const mappings = await db.select().from(biometricDeviceMappings).where(eq(biometricDeviceMappings.deviceId, device.id)).all();

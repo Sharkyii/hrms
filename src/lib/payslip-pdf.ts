@@ -140,9 +140,19 @@ export async function generatePayslipPdf(data: PayslipPdfData): Promise<Uint8Arr
       const bytes = Uint8Array.from(atob(data.company.logoBase64.replace(/^data:image\/\w+;base64,/, "")), (c) => c.charCodeAt(0));
       const isPng = data.company.logoBase64.includes("image/png") || bytes[0] === 0x89;
       const image = isPng ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
-      const logoSize = 50;
-      page.drawImage(image, { x: MARGIN + 10, y: headerTop - headerHeight + 10, width: logoSize, height: logoSize });
-      textX = MARGIN + 10 + logoSize + 14;
+      // Fit within a box rather than forcing a square — preserves aspect ratio for wide wordmark logos.
+      const maxWidth = 140;
+      const maxHeight = 44;
+      const scale = Math.min(maxWidth / image.width, maxHeight / image.height, 1);
+      const drawWidth = image.width * scale;
+      const drawHeight = image.height * scale;
+      page.drawImage(image, {
+        x: MARGIN + 10,
+        y: headerTop - headerHeight / 2 - drawHeight / 2,
+        width: drawWidth,
+        height: drawHeight,
+      });
+      textX = MARGIN + 10 + drawWidth + 14;
     } catch {
       // malformed logo data — fall back to text-only header
     }

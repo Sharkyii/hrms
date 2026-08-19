@@ -4,6 +4,7 @@ import { Badge } from "../components/Badge";
 import { Spinner } from "../components/Spinner";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
+import type { Employee } from "../auth";
 
 interface AttendanceRecord {
   id: number;
@@ -19,6 +20,9 @@ interface AttendanceRecord {
 interface CorrectionRequest {
   id: number;
   attendanceId: number;
+  employeeId: number;
+  employeeName: string;
+  date: string;
   fieldChanged: string;
   oldValue: string | null;
   newValue: string;
@@ -31,17 +35,21 @@ export function Exceptions() {
   const confirm = useConfirm();
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [corrections, setCorrections] = useState<CorrectionRequest[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [tab, setTab] = useState<"attendance" | "corrections">("attendance");
   const [loading, setLoading] = useState(true);
 
   async function load() {
     setRecords(await api.get<AttendanceRecord[]>("/attendance/exceptions"));
     setCorrections(await api.get<CorrectionRequest[]>("/corrections"));
+    setEmployees(await api.get<Employee[]>("/employees"));
     setLoading(false);
   }
   useEffect(() => {
     load();
   }, []);
+
+  const empName = (id: number) => employees.find((e) => e.id === id)?.fullName ?? `#${id}`;
 
   async function decideAttendance(id: number, decision: "approve" | "reject") {
     if (decision === "reject") {
@@ -89,12 +97,12 @@ export function Exceptions() {
                 <div className="table-wrap">
                   <table>
                     <thead>
-                      <tr><th>Employee ID</th><th>Date</th><th>In</th><th>Out</th><th>Confidence</th><th>Reason</th><th></th></tr>
+                      <tr><th>Employee</th><th>Date</th><th>In</th><th>Out</th><th>Confidence</th><th>Reason</th><th></th></tr>
                     </thead>
                     <tbody>
                       {records.map((r) => (
                         <tr key={r.id}>
-                          <td>{r.employeeId}</td>
+                          <td>{empName(r.employeeId)}</td>
                           <td>{r.date}</td>
                           <td>{r.punchInAt ? new Date(r.punchInAt).toLocaleTimeString() : "—"}</td>
                           <td>{r.punchOutAt ? new Date(r.punchOutAt).toLocaleTimeString() : "—"}</td>
@@ -121,11 +129,13 @@ export function Exceptions() {
                 <div className="table-wrap">
                   <table>
                     <thead>
-                      <tr><th>Field</th><th>Old</th><th>New</th><th>Reason</th><th></th></tr>
+                      <tr><th>Employee</th><th>Date</th><th>Field</th><th>Old</th><th>New</th><th>Reason</th><th></th></tr>
                     </thead>
                     <tbody>
                       {corrections.map((r) => (
                         <tr key={r.id}>
+                          <td>{r.employeeName}</td>
+                          <td>{r.date}</td>
                           <td>{r.fieldChanged}</td>
                           <td>{r.oldValue ?? "—"}</td>
                           <td>{r.newValue}</td>

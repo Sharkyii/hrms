@@ -54,10 +54,6 @@ app.get("/", requirePermission("attendance.approve_team"), async (c) => {
   const session = c.get("session");
   const db = getDb(c.env.DB);
 
-  if (session.perms.includes("attendance.approve_final")) {
-    return c.json(await db.select().from(attendanceCorrectionRequests).where(eq(attendanceCorrectionRequests.status, "pending")).all());
-  }
-
   const rows = await db
     .select({ request: attendanceCorrectionRequests, attendance: attendanceRecords, employee: employees })
     .from(attendanceCorrectionRequests)
@@ -65,7 +61,19 @@ app.get("/", requirePermission("attendance.approve_team"), async (c) => {
     .innerJoin(employees, eq(attendanceRecords.employeeId, employees.id))
     .where(eq(attendanceCorrectionRequests.status, "pending"))
     .all();
-  return c.json(rows.filter((r) => r.employee.reportingManagerId === session.employeeId).map((r) => r.request));
+
+  const scoped = session.perms.includes("attendance.approve_final")
+    ? rows
+    : rows.filter((r) => r.employee.reportingManagerId === session.employeeId);
+
+  return c.json(
+    scoped.map((r) => ({
+      ...r.request,
+      employeeId: r.employee.id,
+      employeeName: r.employee.fullName,
+      date: r.attendance.date,
+    })),
+  );
 });
 
 app.put("/:id/review", requirePermission("attendance.approve_team"), async (c) => {

@@ -182,7 +182,7 @@ export function Dashboard() {
   const [queuedCount, setQueuedCount] = useState(0);
 
   async function loadAttendance() {
-    const rows = await api.get<AttendanceRecord[]>("/attendance");
+    const rows = await api.get<AttendanceRecord[]>("/attendance?self=true");
     setRecords(rows.sort((a, b) => (a.date < b.date ? 1 : -1)));
     setLoading(false);
   }

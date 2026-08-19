@@ -4,6 +4,7 @@ import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
 import { Employees } from "./pages/Employees";
+import { EmployeeDetail } from "./pages/EmployeeDetail";
 import { Attendance } from "./pages/Attendance";
 import { Exceptions } from "./pages/Exceptions";
 import { Leave } from "./pages/Leave";
@@ -31,6 +32,7 @@ export default function App() {
       <Route element={<ProtectedLayout />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/employees" element={<Employees />} />
+        <Route path="/employees/:id" element={<EmployeeDetail />} />
         <Route path="/attendance" element={<Attendance />} />
         <Route path="/exceptions" element={<Exceptions />} />
         <Route path="/leave" element={<Leave />} />

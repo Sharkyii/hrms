@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
 import { api, ApiError } from "../api";
 import { Badge } from "../components/Badge";
@@ -12,12 +13,14 @@ const EMPLOYEE_TYPES = ["office_laptop", "office_no_laptop", "field", "wfh", "no
 export function Employees() {
   const { can } = useAuth();
   const toast = useToast();
+  const navigate = useNavigate();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"active" | "exited" | "all">("active");
   const [form, setForm] = useState({ employeeCode: "", fullName: "", email: "", employeeType: "office_laptop", dateOfJoining: "" });
 
   async function load() {
@@ -44,11 +47,15 @@ export function Employees() {
     }
   }
 
+  const activeCount = employees.filter((e) => e.status === "active").length;
+  const exitedCount = employees.filter((e) => e.status === "exited").length;
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return employees;
-    return employees.filter((e) => `${e.employeeCode} ${e.fullName} ${e.email} ${e.department ?? ""}`.toLowerCase().includes(q));
-  }, [employees, query]);
+    return employees
+      .filter((e) => statusFilter === "all" || e.status === statusFilter)
+      .filter((e) => !q || `${e.employeeCode} ${e.fullName} ${e.email} ${e.department ?? ""}`.toLowerCase().includes(q));
+  }, [employees, query, statusFilter]);
 
   return (
     <div>
@@ -61,6 +68,12 @@ export function Employees() {
         )}
       </div>
       {error && <div className="error-banner">{error}</div>}
+
+      <div className="stat-grid" style={{ marginBottom: 20 }}>
+        <div className="stat"><div className="value">{employees.length}</div><div className="label">Total employees</div></div>
+        <div className="stat"><div className="value">{activeCount}</div><div className="label">Currently working</div></div>
+        <div className="stat"><div className="value">{exitedCount}</div><div className="label">Exited</div></div>
+      </div>
 
       {can("employee.manage") && showCreate && (
         <div className="card">
@@ -100,6 +113,11 @@ export function Employees() {
 
       <div className="card">
         <h2>Directory ({filtered.length})</h2>
+        <div className="tabs">
+          <button className={statusFilter === "active" ? "active" : ""} onClick={() => setStatusFilter("active")}>Currently working ({activeCount})</button>
+          <button className={statusFilter === "exited" ? "active" : ""} onClick={() => setStatusFilter("exited")}>Exited ({exitedCount})</button>
+          <button className={statusFilter === "all" ? "active" : ""} onClick={() => setStatusFilter("all")}>All ({employees.length})</button>
+        </div>
         <div className="search-box">
           <Icon name="search" />
           <input placeholder="Search by name, code, email, department..." value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -122,7 +140,7 @@ export function Employees() {
               </thead>
               <tbody>
                 {filtered.map((e) => (
-                  <tr key={e.id}>
+                  <tr key={e.id} onClick={() => navigate(`/employees/${e.id}`)} style={{ cursor: "pointer" }}>
                     <td>{e.employeeCode}</td>
                     <td>{e.fullName}</td>
                     <td>{e.employeeType.replace(/_/g, " ")}</td>

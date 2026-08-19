@@ -130,15 +130,18 @@ app.get("/", async (c) => {
   const db = getDb(c.env.DB);
   const from = c.req.query("from");
   const to = c.req.query("to");
+  // ?self=true forces "my own records only" even for someone who could otherwise see everyone —
+  // used by the personal punch widget, which must never show a mix of the whole org's attendance.
+  const selfOnly = c.req.query("self") === "true";
 
   const dateFilters = [];
   if (from) dateFilters.push(gte(attendanceRecords.date, from));
   if (to) dateFilters.push(lte(attendanceRecords.date, to));
 
-  if (session.perms.includes("attendance.view_all")) {
+  if (!selfOnly && session.perms.includes("attendance.view_all")) {
     return c.json(await db.select().from(attendanceRecords).where(and(...dateFilters)).all());
   }
-  if (session.perms.includes("attendance.view_team")) {
+  if (!selfOnly && session.perms.includes("attendance.view_team")) {
     const team = await db.select({ id: employees.id }).from(employees).where(eq(employees.reportingManagerId, session.employeeId)).all();
     const ids = [...team.map((t) => t.id), session.employeeId];
     return c.json(

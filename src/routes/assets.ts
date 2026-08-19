@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { getDb } from "../db/client";
-import { assets, assetAssignments } from "../db/schema";
+import { assets, assetAssignments, employees } from "../db/schema";
 import { requireAuth, requirePermission } from "../middleware/auth";
 import type { Env } from "../types";
 
@@ -11,7 +11,23 @@ app.use("*", requireAuth);
 app.get("/", async (c) => {
   const session = c.get("session");
   const db = getDb(c.env.DB);
-  if (session.perms.includes("assets.manage")) return c.json(await db.select().from(assets).all());
+  if (session.perms.includes("assets.manage")) {
+    const allAssets = await db.select().from(assets).all();
+    const openAssignments = await db
+      .select({ assignment: assetAssignments, employee: employees })
+      .from(assetAssignments)
+      .innerJoin(employees, eq(assetAssignments.employeeId, employees.id))
+      .where(isNull(assetAssignments.returnedAt))
+      .all();
+    const byAssetId = new Map(openAssignments.map((a) => [a.assignment.assetId, a.employee]));
+    return c.json(
+      allAssets.map((a) => ({
+        ...a,
+        assignedToEmployeeId: byAssetId.get(a.id)?.id ?? null,
+        assignedToName: byAssetId.get(a.id)?.fullName ?? null,
+      })),
+    );
+  }
 
   const rows = await db
     .select({ asset: assets, assignment: assetAssignments })
