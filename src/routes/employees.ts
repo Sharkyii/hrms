@@ -57,6 +57,18 @@ app.get("/", async (c) => {
   return c.json(self ? [self] : []);
 });
 
+// Minimal, name-only listing any authenticated employee can see — used to pick a coworker when
+// assigning a task. Deliberately excludes everything the full /employees list exposes.
+app.get("/directory", async (c) => {
+  const db = getDb(c.env.DB);
+  const rows = await db
+    .select({ id: employees.id, fullName: employees.fullName, department: employees.department, designation: employees.designation })
+    .from(employees)
+    .where(eq(employees.status, "active"))
+    .all();
+  return c.json(rows);
+});
+
 app.get("/:id", async (c) => {
   const session = c.get("session");
   const id = Number(c.req.param("id"));

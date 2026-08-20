@@ -57,6 +57,31 @@ export const policies = sqliteTable("policies", {
   publishedAt: text("published_at").notNull().default(sql`(current_timestamp)`),
 });
 
+// Peer-to-peer task board: any employee can assign a task to any other employee. The task
+// itself (who/what/due date/status) is visible company-wide for coordination; the mentor's
+// rating on it is visible only to the assignee, their manager, HR, and founder.
+export const tasks = sqliteTable("tasks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  title: text("title").notNull(),
+  description: text("description"),
+  assignedByEmployeeId: integer("assigned_by_employee_id").notNull().references(() => employees.id),
+  assignedToEmployeeId: integer("assigned_to_employee_id").notNull().references(() => employees.id),
+  dueDate: text("due_date"),
+  status: text("status", { enum: ["open", "in_progress", "done"] }).notNull().default("open"),
+  createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
+  completedAt: text("completed_at"),
+});
+
+// One rating per task, given by the assignee's reporting manager (or HR/founder) once the task is done.
+export const taskRatings = sqliteTable("task_ratings", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  taskId: integer("task_id").notNull().references(() => tasks.id).unique(),
+  ratedByUserId: integer("rated_by_user_id").notNull().references(() => users.id),
+  rating: real("rating").notNull(),
+  comments: text("comments"),
+  ratedAt: text("rated_at").notNull().default(sql`(current_timestamp)`),
+});
+
 // Self-reported daily work log — the non-surveillance alternative to activity tracking:
 // each employee logs what they worked on themselves, visible to their manager/HR/founder.
 export const workLogEntries = sqliteTable("work_log_entries", {
