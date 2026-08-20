@@ -6,6 +6,7 @@ import { Badge } from "../components/Badge";
 import { Spinner } from "../components/Spinner";
 import { Icon } from "../components/Icon";
 import { useToast } from "../components/Toast";
+import { initials } from "../initials";
 import type { Employee } from "../auth";
 
 const EMPLOYEE_TYPES = ["office_laptop", "office_no_laptop", "field", "wfh", "no_smartphone", "contract"];
@@ -127,29 +128,23 @@ export function Employees() {
         ) : filtered.length === 0 ? (
           <p className="empty">No employees match.</p>
         ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Code</th>
-                  <th>Name</th>
-                  <th>Type</th>
-                  <th>Department</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((e) => (
-                  <tr key={e.id} onClick={() => navigate(`/employees/${e.id}`)} style={{ cursor: "pointer" }}>
-                    <td>{e.employeeCode}</td>
-                    <td>{e.fullName}</td>
-                    <td>{e.employeeType.replace(/_/g, " ")}</td>
-                    <td>{e.department ?? "—"}</td>
-                    <td><Badge value={e.status} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="list">
+            {filtered.map((e) => (
+              <div className="list-row clickable" key={e.id} onClick={() => navigate(`/employees/${e.id}`)}>
+                <div className="avatar-chip">{initials(e.fullName)}</div>
+                <div className="main">
+                  <div className="title">{e.fullName} <span className="muted" style={{ fontWeight: 400 }}>— {e.employeeCode}</span></div>
+                  <div className="subtitle">{e.designation ? `${e.designation} · ` : ""}{e.department ?? "No department"}</div>
+                </div>
+                <div className="meta">
+                  <div className="col">
+                    <div className="k">Type</div>
+                    <div className="v">{e.employeeType.replace(/_/g, " ")}</div>
+                  </div>
+                  <Badge value={e.status} />
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

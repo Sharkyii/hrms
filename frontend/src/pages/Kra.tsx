@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../auth";
 import { api } from "../api";
 import { Badge } from "../components/Badge";
+import { Icon } from "../components/Icon";
 import { useToast } from "../components/Toast";
+import { initials } from "../initials";
 import type { Employee } from "../auth";
 
 interface Cycle { id: number; name: string; startDate: string; endDate: string; status: string }
@@ -149,23 +151,25 @@ export function Kra() {
         {goals.length === 0 ? (
           <p className="empty">No goals set for this cycle yet.</p>
         ) : (
-          <table>
-            <thead><tr><th>Title</th><th>Weight</th><th>Self rating</th></tr></thead>
-            <tbody>
-              {goals.map((g) => (
-                <tr key={g.id}>
-                  <td>{g.title}</td>
-                  <td>{g.weightPct}%</td>
-                  <td>
-                    <select defaultValue="" onChange={(e) => e.target.value && selfRate(g.id, Number(e.target.value))}>
-                      <option value="">Rate...</option>
-                      {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="list">
+            {goals.map((g) => (
+              <div className="list-row" key={g.id}>
+                <div className="avatar-chip">{g.weightPct}%</div>
+                <div className="main">
+                  <div className="title">{g.title}</div>
+                  {g.target && <div className="subtitle">{g.target}</div>}
+                </div>
+                <select
+                  defaultValue=""
+                  style={{ width: "auto" }}
+                  onChange={(e) => e.target.value && selfRate(g.id, Number(e.target.value))}
+                >
+                  <option value="">Rate...</option>
+                  {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
@@ -176,20 +180,22 @@ export function Kra() {
             <div className="stat"><div className="value">{myAverageTaskScore?.toFixed(1)}</div><div className="label">Average score</div></div>
             <div className="stat"><div className="value">{myRatedTasks.length}</div><div className="label">Rated tasks</div></div>
           </div>
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Task</th><th>Assigned by</th><th>Score</th><th>Comments</th></tr></thead>
-              <tbody>
-                {myRatedTasks.map((t) => (
-                  <tr key={t.id}>
-                    <td>{t.title}</td>
-                    <td>{t.assignedByName}</td>
-                    <td><strong>{t.rating?.rating}</strong> / 5</td>
-                    <td>{t.rating?.comments ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="list">
+            {myRatedTasks.map((t) => (
+              <div className="list-row" key={t.id}>
+                <div className="avatar-chip">{initials(t.assignedByName)}</div>
+                <div className="main">
+                  <div className="title">{t.title}</div>
+                  <div className="subtitle">Assigned by {t.assignedByName}{t.rating?.comments ? ` — "${t.rating.comments}"` : ""}</div>
+                </div>
+                <div className="meta">
+                  <div className="col">
+                    <div className="k">Score</div>
+                    <div className="v">{t.rating?.rating} / 5</div>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -223,54 +229,78 @@ export function Kra() {
         {tasks.length === 0 ? (
           <p className="empty" style={{ marginTop: 16 }}>No tasks yet.</p>
         ) : (
-          <div className="table-wrap" style={{ marginTop: 16 }}>
-            <table>
-              <thead>
-                <tr><th>Title</th><th>Assigned by</th><th>Assigned to</th><th>Due</th><th>Status</th><th>Score</th><th></th></tr>
-              </thead>
-              <tbody>
-                {tasks.map((t) => {
-                  const assigneeRecord = employees.find((e) => e.id === t.assignedToEmployeeId);
-                  const canRate =
-                    t.status === "done" &&
-                    !t.rating &&
-                    (can("kra.view_all") || (canManageTeam && assigneeRecord?.reportingManagerId === employee?.id));
-                  const isMine = t.assignedToEmployeeId === employee?.id;
-                  const draft = rateDraft[t.id] ?? { rating: "", comments: "" };
-                  const late = t.dueDate && t.status !== "done" && new Date(t.dueDate) < new Date();
+          <div className="kanban" style={{ marginTop: 20 }}>
+            {(["open", "in_progress", "done"] as const).map((col) => {
+              const colTasks = tasks.filter((t) => t.status === col);
+              const colLabel = col === "open" ? "Open" : col === "in_progress" ? "In progress" : "Done";
+              return (
+                <div className="kanban-col" key={col}>
+                  <div className="kanban-col-head">
+                    <h3>{colLabel}</h3>
+                    <span className="count">{colTasks.length}</span>
+                  </div>
+                  {colTasks.length === 0 ? (
+                    <div className="kanban-empty">Nothing here.</div>
+                  ) : (
+                    colTasks.map((t) => {
+                      const assigneeRecord = employees.find((e) => e.id === t.assignedToEmployeeId);
+                      const canRate =
+                        t.status === "done" &&
+                        !t.rating &&
+                        (can("kra.view_all") || (canManageTeam && assigneeRecord?.reportingManagerId === employee?.id));
+                      const isMine = t.assignedToEmployeeId === employee?.id;
+                      const draft = rateDraft[t.id] ?? { rating: "", comments: "" };
+                      const late = t.dueDate && t.status !== "done" && new Date(t.dueDate) < new Date();
 
-                  return (
-                    <tr key={t.id}>
-                      <td>{t.title}{t.description && <div className="muted" style={{ fontSize: 12 }}>{t.description}</div>}</td>
-                      <td>{t.assignedByName}</td>
-                      <td>{t.assignedToName}</td>
-                      <td>{t.dueDate ?? "—"} {late && <Badge value="late" />}</td>
-                      <td><Badge value={t.status} /></td>
-                      <td>{t.rating ? `${t.rating.rating} / 5` : "—"}</td>
-                      <td>
-                        {isMine && t.status === "open" && <button className="btn secondary" onClick={() => updateTaskStatus(t.id, "in_progress")}>Start</button>}
-                        {isMine && t.status === "in_progress" && <button className="btn secondary" onClick={() => updateTaskStatus(t.id, "done")}>Mark done</button>}
-                        {canRate && (
-                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                            <select value={draft.rating} onChange={(e) => setRateDraft({ ...rateDraft, [t.id]: { ...draft, rating: e.target.value } })}>
-                              <option value="">Rate...</option>
-                              {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
-                            </select>
-                            <input
-                              placeholder="Comment (optional)"
-                              style={{ width: 140 }}
-                              value={draft.comments}
-                              onChange={(e) => setRateDraft({ ...rateDraft, [t.id]: { ...draft, comments: e.target.value } })}
-                            />
-                            <button className="btn secondary" disabled={!draft.rating} onClick={() => submitRating(t.id)}>Save</button>
+                      return (
+                        <div className="kanban-card" key={t.id}>
+                          <div className="title">{t.title}</div>
+                          {t.description && <div className="desc">{t.description}</div>}
+                          <div className="people">
+                            <span className="avatar-chip">{initials(t.assignedToName)}</span>
+                            {t.assignedToName}
+                            <span>·</span>
+                            <span>from {t.assignedByName}</span>
                           </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          {t.dueDate && (
+                            <div className={`due ${late ? "late" : ""}`}>
+                              <Icon name="attendance" size={12} />
+                              Due {t.dueDate}{late ? " — late" : ""}
+                            </div>
+                          )}
+                          {t.rating && (
+                            <div className="footer-row">
+                              <Badge value="rated" />
+                              <strong>{t.rating.rating} / 5</strong>
+                            </div>
+                          )}
+                          {(isMine && (t.status === "open" || t.status === "in_progress")) && (
+                            <div className="footer-row">
+                              {t.status === "open" && <button className="btn secondary" onClick={() => updateTaskStatus(t.id, "in_progress")}>Start</button>}
+                              {t.status === "in_progress" && <button className="btn" onClick={() => updateTaskStatus(t.id, "done")}>Mark done</button>}
+                            </div>
+                          )}
+                          {canRate && (
+                            <div className="rate-row">
+                              <select value={draft.rating} onChange={(e) => setRateDraft({ ...rateDraft, [t.id]: { ...draft, rating: e.target.value } })}>
+                                <option value="">Rate...</option>
+                                {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+                              </select>
+                              <input
+                                placeholder="Comment"
+                                value={draft.comments}
+                                onChange={(e) => setRateDraft({ ...rateDraft, [t.id]: { ...draft, comments: e.target.value } })}
+                              />
+                              <button className="btn secondary" disabled={!draft.rating} onClick={() => submitRating(t.id)}>Save</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

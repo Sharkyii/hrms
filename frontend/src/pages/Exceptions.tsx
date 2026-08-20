@@ -4,6 +4,7 @@ import { Badge } from "../components/Badge";
 import { Spinner } from "../components/Spinner";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
+import { initials } from "../initials";
 import type { Employee } from "../auth";
 
 interface AttendanceRecord {
@@ -94,28 +95,26 @@ export function Exceptions() {
               {records.length === 0 ? (
                 <p className="empty">No attendance exceptions pending.</p>
               ) : (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr><th>Employee</th><th>Date</th><th>In</th><th>Out</th><th>Confidence</th><th>Reason</th><th></th></tr>
-                    </thead>
-                    <tbody>
-                      {records.map((r) => (
-                        <tr key={r.id}>
-                          <td>{empName(r.employeeId)}</td>
-                          <td>{r.date}</td>
-                          <td>{r.punchInAt ? new Date(r.punchInAt).toLocaleTimeString() : "—"}</td>
-                          <td>{r.punchOutAt ? new Date(r.punchOutAt).toLocaleTimeString() : "—"}</td>
-                          <td><Badge value={r.confidence} /></td>
-                          <td className="muted">{r.flagReason}</td>
-                          <td>
-                            <button className="btn" onClick={() => decideAttendance(r.id, "approve")}>Approve</button>{" "}
-                            <button className="btn danger" onClick={() => decideAttendance(r.id, "reject")}>Reject</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="list">
+                  {records.map((r) => (
+                    <div className="list-row" key={r.id}>
+                      <div className="avatar-chip">{initials(empName(r.employeeId))}</div>
+                      <div className="main">
+                        <div className="title">{empName(r.employeeId)}</div>
+                        <div className="subtitle">
+                          {r.date} · In {r.punchInAt ? new Date(r.punchInAt).toLocaleTimeString() : "—"} · Out {r.punchOutAt ? new Date(r.punchOutAt).toLocaleTimeString() : "—"}
+                          {r.flagReason ? ` · ${r.flagReason}` : ""}
+                        </div>
+                      </div>
+                      <div className="meta">
+                        <Badge value={r.confidence} />
+                        <div className="actions">
+                          <button className="btn" onClick={() => decideAttendance(r.id, "approve")}>Approve</button>
+                          <button className="btn danger" onClick={() => decideAttendance(r.id, "reject")}>Reject</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -126,28 +125,23 @@ export function Exceptions() {
               {corrections.length === 0 ? (
                 <p className="empty">No correction requests pending.</p>
               ) : (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr><th>Employee</th><th>Date</th><th>Field</th><th>Old</th><th>New</th><th>Reason</th><th></th></tr>
-                    </thead>
-                    <tbody>
-                      {corrections.map((r) => (
-                        <tr key={r.id}>
-                          <td>{r.employeeName}</td>
-                          <td>{r.date}</td>
-                          <td>{r.fieldChanged}</td>
-                          <td>{r.oldValue ?? "—"}</td>
-                          <td>{r.newValue}</td>
-                          <td className="muted">{r.reason}</td>
-                          <td>
-                            <button className="btn" onClick={() => decideCorrection(r.id, "approved")}>Approve</button>{" "}
-                            <button className="btn danger" onClick={() => decideCorrection(r.id, "rejected")}>Reject</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="list">
+                  {corrections.map((r) => (
+                    <div className="list-row" key={r.id}>
+                      <div className="avatar-chip">{initials(r.employeeName)}</div>
+                      <div className="main">
+                        <div className="title">{r.employeeName} <span className="muted" style={{ fontWeight: 400 }}>— {r.date}</span></div>
+                        <div className="subtitle">
+                          {r.fieldChanged}: {r.oldValue ?? "—"} → {r.newValue}
+                          {r.reason ? ` · "${r.reason}"` : ""}
+                        </div>
+                      </div>
+                      <div className="actions">
+                        <button className="btn" onClick={() => decideCorrection(r.id, "approved")}>Approve</button>
+                        <button className="btn danger" onClick={() => decideCorrection(r.id, "rejected")}>Reject</button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

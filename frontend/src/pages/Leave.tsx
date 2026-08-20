@@ -5,6 +5,7 @@ import { Badge } from "../components/Badge";
 import { Spinner } from "../components/Spinner";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
+import { initials } from "../initials";
 import type { Employee } from "../auth";
 
 interface LeaveType {
@@ -115,36 +116,29 @@ export function Leave() {
         {requests.length === 0 ? (
           <p className="empty">No leave requests.</p>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                {seesOthers && <th>Employee</th>}
-                <th>Type</th><th>From</th><th>To</th><th>Days</th><th>Status</th>{can("leave.approve_team") && <th></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {requests.map((r) => (
-                <tr key={r.id}>
-                  {seesOthers && <td>{empName(r.employeeId)}</td>}
-                  <td>{typeName(r.leaveTypeId)}</td>
-                  <td>{r.startDate}</td>
-                  <td>{r.endDate}</td>
-                  <td>{r.days}</td>
-                  <td><Badge value={r.status} /></td>
-                  {can("leave.approve_team") && (
-                    <td>
-                      {r.status === "pending" && (
-                        <>
-                          <button className="btn" onClick={() => decide(r.id, "approved")}>Approve</button>{" "}
-                          <button className="btn danger" onClick={() => decide(r.id, "rejected")}>Reject</button>
-                        </>
-                      )}
-                    </td>
+          <div className="list">
+            {requests.map((r) => (
+              <div className="list-row" key={r.id}>
+                {seesOthers && <div className="avatar-chip">{initials(empName(r.employeeId).toString())}</div>}
+                <div className="main">
+                  <div className="title">{seesOthers ? empName(r.employeeId) : typeName(r.leaveTypeId)}</div>
+                  <div className="subtitle">
+                    {seesOthers ? `${typeName(r.leaveTypeId)} · ` : ""}{r.startDate} → {r.endDate} · {r.days} day{r.days === 1 ? "" : "s"}
+                    {r.reason ? ` · "${r.reason}"` : ""}
+                  </div>
+                </div>
+                <div className="meta">
+                  <Badge value={r.status} />
+                  {can("leave.approve_team") && r.status === "pending" && (
+                    <div className="actions">
+                      <button className="btn" onClick={() => decide(r.id, "approved")}>Approve</button>
+                      <button className="btn danger" onClick={() => decide(r.id, "rejected")}>Reject</button>
+                    </div>
                   )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>

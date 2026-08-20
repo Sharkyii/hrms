@@ -4,6 +4,7 @@ import { api } from "../api";
 import { Badge } from "../components/Badge";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
+import { initials } from "../initials";
 import type { Employee } from "../auth";
 
 interface ExitRequest { id: number; employeeId: number; resignationDate: string; lastWorkingDay: string; status: string }
@@ -75,34 +76,33 @@ export function Exit() {
         {requests.length === 0 ? (
           <p className="empty">No exit requests.</p>
         ) : (
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Employee</th><th>Resignation</th><th>Last day</th><th>Status</th>{can("exit.manage") && <th></th>}</tr></thead>
-              <tbody>
-                {requests.map((r) => (
-                  <tr key={r.id}>
-                    <td>{canManage ? empName(r.employeeId) : r.employeeId}</td>
-                    <td>{r.resignationDate}</td>
-                    <td>{r.lastWorkingDay}</td>
-                    <td><Badge value={r.status} /></td>
-                    {can("exit.manage") && (
-                      <td>
-                        {r.status === "pending" && <button className="btn secondary" onClick={() => startClearance(r.id)}>Start clearance</button>}
-                        {r.status === "in_clearance" && (
-                          <span>
-                            <input placeholder="Dues" style={{ width: 70, display: "inline-block", marginRight: 4 }}
-                              onChange={(e) => setSettlement({ ...settlement, [r.id]: { ...(settlement[r.id] ?? { dues: "0", deductions: "0" }), dues: e.target.value } })} />
-                            <input placeholder="Deductions" style={{ width: 80, display: "inline-block", marginRight: 4 }}
-                              onChange={(e) => setSettlement({ ...settlement, [r.id]: { ...(settlement[r.id] ?? { dues: "0", deductions: "0" }), deductions: e.target.value } })} />
-                            <button className="btn" onClick={() => settle(r.id)}>Settle</button>
-                          </span>
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="list">
+            {requests.map((r) => (
+              <div className="list-row" key={r.id}>
+                {canManage && <div className="avatar-chip">{initials(empName(r.employeeId))}</div>}
+                <div className="main">
+                  <div className="title">{canManage ? empName(r.employeeId) : `Filed ${r.resignationDate}`}</div>
+                  <div className="subtitle">Resigned {r.resignationDate} · Last day {r.lastWorkingDay}</div>
+                </div>
+                <div className="meta">
+                  <Badge value={r.status} />
+                  {can("exit.manage") && (
+                    <div className="actions">
+                      {r.status === "pending" && <button className="btn secondary" onClick={() => startClearance(r.id)}>Start clearance</button>}
+                      {r.status === "in_clearance" && (
+                        <>
+                          <input placeholder="Dues" style={{ width: 80 }}
+                            onChange={(e) => setSettlement({ ...settlement, [r.id]: { ...(settlement[r.id] ?? { dues: "0", deductions: "0" }), dues: e.target.value } })} />
+                          <input placeholder="Deductions" style={{ width: 90 }}
+                            onChange={(e) => setSettlement({ ...settlement, [r.id]: { ...(settlement[r.id] ?? { dues: "0", deductions: "0" }), deductions: e.target.value } })} />
+                          <button className="btn" onClick={() => settle(r.id)}>Settle</button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

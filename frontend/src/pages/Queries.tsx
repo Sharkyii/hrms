@@ -3,6 +3,7 @@ import { useAuth } from "../auth";
 import { api } from "../api";
 import { Badge } from "../components/Badge";
 import { useToast } from "../components/Toast";
+import { initials } from "../initials";
 import type { Employee } from "../auth";
 
 interface Query { id: number; employeeId: number; category: string; subject: string; description: string | null; status: string }
@@ -57,26 +58,26 @@ export function Queries() {
         {queries.length === 0 ? (
           <p className="empty">No queries yet.</p>
         ) : (
-          <table>
-            <thead><tr>{canManage && <th>Employee</th>}<th>Category</th><th>Subject</th><th>Status</th>{canManage && <th></th>}</tr></thead>
-            <tbody>
-              {queries.map((q) => (
-                <tr key={q.id}>
-                  {canManage && <td>{empName(q.employeeId)}</td>}
-                  <td>{q.category}</td>
-                  <td>{q.subject}</td>
-                  <td><Badge value={q.status} /></td>
-                  {can("queries.manage") && (
-                    <td>
-                      <select value={q.status} onChange={(e) => setStatus(q.id, e.target.value)}>
-                        {["open", "in_progress", "resolved", "closed"].map((s) => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </td>
+          <div className="list">
+            {queries.map((q) => (
+              <div className="list-row" key={q.id}>
+                {canManage && <div className="avatar-chip">{initials(empName(q.employeeId))}</div>}
+                <div className="main">
+                  <div className="title">{q.subject}</div>
+                  <div className="subtitle">{canManage ? `${empName(q.employeeId)} · ` : ""}{q.category}{q.description ? ` · ${q.description}` : ""}</div>
+                </div>
+                <div className="meta">
+                  {canManage ? (
+                    <select value={q.status} style={{ width: "auto" }} onChange={(e) => setStatus(q.id, e.target.value)}>
+                      {["open", "in_progress", "resolved", "closed"].map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  ) : (
+                    <Badge value={q.status} />
                   )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>

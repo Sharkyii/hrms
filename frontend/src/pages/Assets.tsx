@@ -59,32 +59,36 @@ export function Assets() {
 
       <div className="card">
         <h2>{can("assets.manage") ? "All assets" : "My assets"}</h2>
-        <table>
-          <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Status</th>{can("assets.manage") && <th>Assigned to</th>}{can("assets.manage") && <th></th>}</tr></thead>
-          <tbody>
+        {assets.length === 0 ? (
+          <p className="empty">No assets.</p>
+        ) : (
+          <div className="list">
             {assets.map((a) => (
-              <tr key={a.id}>
-                <td>{a.assetCode}</td>
-                <td>{a.name}</td>
-                <td>{a.category ?? "—"}</td>
-                <td><Badge value={a.status} /></td>
-                {can("assets.manage") && <td>{a.assignedToName ?? "—"}</td>}
-                {can("assets.manage") && (
-                  <td>
-                    {a.status === "available" ? (
-                      <select defaultValue="" onChange={(e) => e.target.value && assign(a.id, Number(e.target.value))}>
-                        <option value="">Assign to...</option>
-                        {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
-                      </select>
-                    ) : (
-                      <button className="btn secondary" onClick={() => returnAsset(a.id)}>Mark returned</button>
-                    )}
-                  </td>
-                )}
-              </tr>
+              <div className="list-row" key={a.id}>
+                <div className="avatar-chip">{a.category ? a.category.slice(0, 2).toUpperCase() : "AS"}</div>
+                <div className="main">
+                  <div className="title">{a.name} <span className="muted" style={{ fontWeight: 400 }}>— {a.assetCode}</span></div>
+                  <div className="subtitle">{a.category ?? "Uncategorized"}{can("assets.manage") ? ` · ${a.assignedToName ?? "Unassigned"}` : ""}</div>
+                </div>
+                <div className="meta">
+                  <Badge value={a.status} />
+                  {can("assets.manage") && (
+                    <div className="actions">
+                      {a.status === "available" ? (
+                        <select defaultValue="" style={{ width: "auto" }} onChange={(e) => e.target.value && assign(a.id, Number(e.target.value))}>
+                          <option value="">Assign to...</option>
+                          {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
+                        </select>
+                      ) : (
+                        <button className="btn secondary" onClick={() => returnAsset(a.id)}>Mark returned</button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        )}
       </div>
     </div>
   );

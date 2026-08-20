@@ -2,17 +2,13 @@ import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
 import { Icon } from "./Icon";
+import { initials } from "../initials";
 
 interface NavItem {
   to: string;
   label: string;
   icon: Parameters<typeof Icon>[0]["name"];
   show: boolean;
-}
-
-function initials(name?: string) {
-  if (!name) return "?";
-  return name.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 }
 
 export function Layout() {
