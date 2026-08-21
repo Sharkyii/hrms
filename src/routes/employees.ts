@@ -23,6 +23,8 @@ import {
   statutorySettings,
   employeePayrollDetails,
   employeeExtendedDetails,
+  employeeDocuments,
+  employeeDocumentTypeValues,
 } from "../db/schema";
 import { computePayableDays, computeStatutory } from "../lib/payroll-engine";
 import { requireAuth, requirePermission } from "../middleware/auth";
@@ -272,6 +274,104 @@ app.put("/:id/extended-details", requirePermission("employee.manage"), async (c)
     ? await db.update(employeeExtendedDetails).set(patch).where(eq(employeeExtendedDetails.employeeId, id)).returning().get()
     : await db.insert(employeeExtendedDetails).values(patch).returning().get();
   return c.json(saved);
+});
+
+const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024; // 10MB
+
+// KYC/employment documents live in R2, keyed off the employee — the employee can upload their
+// own (photo, Aadhar, PAN...), HR/founder can upload for anyone (offer letters, agreements...).
+app.post("/:id/documents", async (c) => {
+  const session = c.get("session");
+  const id = Number(c.req.param("id"));
+  const isSelf = id === session.employeeId;
+  if (!isSelf && !session.perms.includes("employee.manage")) return c.json({ error: "Forbidden" }, 403);
+
+  const db = getDb(c.env.DB);
+  const employee = await db.select().from(employees).where(eq(employees.id, id)).get();
+  if (!employee) return c.json({ error: "Not found" }, 404);
+
+  const form = await c.req.formData().catch(() => null);
+  const file = form?.get("file");
+  const docType = form?.get("docType");
+  if (!(file instanceof File) || typeof docType !== "string" || !(employeeDocumentTypeValues as readonly string[]).includes(docType)) {
+    return c.json({ error: "file and a valid docType are required" }, 400);
+  }
+  if (file.size > MAX_DOCUMENT_BYTES) return c.json({ error: "File must be under 10MB" }, 400);
+
+  const r2Key = `employees/${id}/${docType}/${Date.now()}-${file.name}`;
+  const contentType = file.type || "application/octet-stream";
+  await c.env.DOCUMENTS.put(r2Key, await file.arrayBuffer(), { httpMetadata: { contentType } });
+
+  const created = await db
+    .insert(employeeDocuments)
+    .values({
+      employeeId: id,
+      docType: docType as (typeof employeeDocumentTypeValues)[number],
+      fileName: file.name,
+      r2Key,
+      contentType,
+      fileSize: file.size,
+      uploadedByUserId: session.sub,
+    })
+    .returning()
+    .get();
+  return c.json(created, 201);
+});
+
+app.get("/:id/documents", async (c) => {
+  const session = c.get("session");
+  const id = Number(c.req.param("id"));
+  const db = getDb(c.env.DB);
+  const employee = await db.select().from(employees).where(eq(employees.id, id)).get();
+  if (!employee) return c.json({ error: "Not found" }, 404);
+
+  const canViewAll = session.perms.includes("employee.view_all");
+  const canViewTeam = session.perms.includes("employee.view_team") && employee.reportingManagerId === session.employeeId;
+  const isSelf = employee.id === session.employeeId;
+  if (!canViewAll && !canViewTeam && !isSelf) return c.json({ error: "Forbidden" }, 403);
+
+  const docs = await db.select().from(employeeDocuments).where(eq(employeeDocuments.employeeId, id)).orderBy(desc(employeeDocuments.uploadedAt)).all();
+  return c.json(docs.map((d) => ({ id: d.id, docType: d.docType, fileName: d.fileName, contentType: d.contentType, fileSize: d.fileSize, uploadedAt: d.uploadedAt })));
+});
+
+app.get("/:id/documents/:docId/download", async (c) => {
+  const session = c.get("session");
+  const id = Number(c.req.param("id"));
+  const docId = Number(c.req.param("docId"));
+  const db = getDb(c.env.DB);
+  const employee = await db.select().from(employees).where(eq(employees.id, id)).get();
+  if (!employee) return c.json({ error: "Not found" }, 404);
+
+  const canViewAll = session.perms.includes("employee.view_all");
+  const canViewTeam = session.perms.includes("employee.view_team") && employee.reportingManagerId === session.employeeId;
+  const isSelf = employee.id === session.employeeId;
+  if (!canViewAll && !canViewTeam && !isSelf) return c.json({ error: "Forbidden" }, 403);
+
+  const doc = await db.select().from(employeeDocuments).where(eq(employeeDocuments.id, docId)).get();
+  if (!doc || doc.employeeId !== id) return c.json({ error: "Not found" }, 404);
+
+  const object = await c.env.DOCUMENTS.get(doc.r2Key);
+  if (!object) return c.json({ error: "File missing from storage" }, 404);
+
+  return new Response(object.body, {
+    headers: {
+      "Content-Type": doc.contentType,
+      "Content-Disposition": `attachment; filename="${doc.fileName}"`,
+      "Content-Length": String(doc.fileSize),
+    },
+  });
+});
+
+app.delete("/:id/documents/:docId", requirePermission("employee.manage"), async (c) => {
+  const id = Number(c.req.param("id"));
+  const docId = Number(c.req.param("docId"));
+  const db = getDb(c.env.DB);
+  const doc = await db.select().from(employeeDocuments).where(eq(employeeDocuments.id, docId)).get();
+  if (!doc || doc.employeeId !== id) return c.json({ error: "Not found" }, 404);
+
+  await c.env.DOCUMENTS.delete(doc.r2Key);
+  await db.delete(employeeDocuments).where(eq(employeeDocuments.id, docId)).run();
+  return c.json({ ok: true });
 });
 
 app.post("/", requirePermission("employee.manage"), async (c) => {

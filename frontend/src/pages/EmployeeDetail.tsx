@@ -39,6 +39,37 @@ interface LeaveRequest {
   days: number;
   status: string;
 }
+interface DocumentMeta {
+  id: number;
+  docType: string;
+  fileName: string;
+  contentType: string;
+  fileSize: number;
+  uploadedAt: string;
+}
+const CURRENT_COMPANY_DOCS: Array<{ type: string; label: string }> = [
+  { type: "offer_letter", label: "Offer Letter" },
+  { type: "appointment_letter", label: "Appointment Letter" },
+  { type: "confirmation_letter", label: "Confirmation Letter" },
+  { type: "employee_agreement", label: "Employee Agreement" },
+  { type: "increment_letter", label: "Increment Letter (if any)" },
+];
+const PREVIOUS_COMPANY_DOCS: Array<{ type: string; label: string; multiple?: boolean }> = [
+  { type: "photo", label: "Passport size photo" },
+  { type: "aadhar_card", label: "Aadhar card" },
+  { type: "pan_card", label: "PAN card" },
+  { type: "education_certificate", label: "Education certificate" },
+  { type: "bank_passbook", label: "Bank passbook — first page" },
+  { type: "previous_offer_letter", label: "Previous company offer letter" },
+  { type: "previous_relieving_letter", label: "Previous company relieving letter" },
+  { type: "previous_increment_letter", label: "Increment letter (if any)" },
+  { type: "previous_salary_slip", label: "Last 3 months' salary slips", multiple: true },
+];
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
 interface Asset {
   id: number;
   assetCode: string;
@@ -131,6 +162,8 @@ export function EmployeeDetail() {
   const [logDate, setLogDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [logTasks, setLogTasks] = useState("");
   const [savingLog, setSavingLog] = useState(false);
+  const [documents, setDocuments] = useState<DocumentMeta[]>([]);
+  const [uploadingType, setUploadingType] = useState<string | null>(null);
 
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -178,10 +211,37 @@ export function EmployeeDetail() {
       .finally(() => setLoading(false));
   }
 
+  function loadDocuments() {
+    api.get<DocumentMeta[]>(`/employees/${id}/documents`).then(setDocuments).catch(() => setDocuments([]));
+  }
+
   useEffect(() => {
     load();
+    loadDocuments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  async function uploadDoc(docType: string, file: File) {
+    setUploadingType(docType);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("docType", docType);
+      await api.postForm(`/employees/${id}/documents`, form);
+      toast.success("Document uploaded.");
+      loadDocuments();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Upload failed");
+    } finally {
+      setUploadingType(null);
+    }
+  }
+
+  async function deleteDoc(docId: number) {
+    await api.del(`/employees/${id}/documents/${docId}`);
+    toast.success("Document removed.");
+    loadDocuments();
+  }
 
   async function addLogEntry() {
     if (!logTasks.trim()) return;
@@ -221,6 +281,48 @@ export function EmployeeDetail() {
 
   const e = profile.employee;
   const s = profile.attendance.thisMonthSummary;
+  const canUploadDocs = profile.isSelf || can("employee.manage");
+
+  function renderDocSlot(slot: { type: string; label: string; multiple?: boolean }) {
+    const files = documents.filter((d) => d.docType === slot.type);
+    return (
+      <div className="list-row" key={slot.type} style={{ alignItems: "flex-start" }}>
+        <div className="main">
+          <div className="title">{slot.label}</div>
+          {files.length === 0 ? (
+            <div className="subtitle">Not uploaded yet.</div>
+          ) : (
+            <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 4 }}>
+              {files.map((f) => (
+                <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                  <a href={`/api/employees/${id}/documents/${f.id}/download`} target="_blank" rel="noreferrer">{f.fileName}</a>
+                  <span className="muted">({formatBytes(f.fileSize)})</span>
+                  {can("employee.manage") && (
+                    <button className="btn danger" style={{ padding: "2px 8px", fontSize: 12 }} onClick={() => deleteDoc(f.id)}>Remove</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {canUploadDocs && (files.length === 0 || slot.multiple) && (
+          <label className="btn secondary" style={{ cursor: "pointer" }}>
+            {uploadingType === slot.type ? "Uploading..." : "Upload"}
+            <input
+              type="file"
+              style={{ display: "none" }}
+              disabled={uploadingType !== null}
+              onChange={(ev) => {
+                const file = ev.target.files?.[0];
+                if (file) uploadDoc(slot.type, file);
+                ev.target.value = "";
+              }}
+            />
+          </label>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -355,7 +457,15 @@ export function EmployeeDetail() {
         </div>
       )}
 
-      {(editing || profile.extendedDetails?.previousCompanyName) && (
+      <div className="card">
+        <h2>Current company details</h2>
+        <p className="muted">Payslips are generated automatically each run — see the Payslips section below.</p>
+        <div className="list">
+          {CURRENT_COMPANY_DOCS.map(renderDocSlot)}
+        </div>
+      </div>
+
+      {(editing || profile.extendedDetails?.previousCompanyName || documents.some((d) => PREVIOUS_COMPANY_DOCS.some((s) => s.type === d.docType))) && (
         <div className="card">
           <h2>Previous company details</h2>
           <div className="form-row">
@@ -366,7 +476,9 @@ export function EmployeeDetail() {
             <div className="field"><label>Last salary — per month in hand</label>{editing ? <input type="number" value={extForm.previousCompanySalaryMonthly} onChange={(ev) => setExtForm({ ...extForm, previousCompanySalaryMonthly: ev.target.value })} /> : <div>{profile.extendedDetails?.previousCompanySalaryMonthly?.toFixed(2) ?? "—"}</div>}</div>
             <div className="field"><label>Last salary — yearly CTC</label>{editing ? <input type="number" value={extForm.previousCompanySalaryAnnualCtc} onChange={(ev) => setExtForm({ ...extForm, previousCompanySalaryAnnualCtc: ev.target.value })} /> : <div>{profile.extendedDetails?.previousCompanySalaryAnnualCtc?.toFixed(2) ?? "—"}</div>}</div>
           </div>
-          <p className="muted">Document uploads (ID proofs, offer/relieving letters, salary slips) are coming next — file storage is being enabled.</p>
+          <div className="list" style={{ marginTop: 12 }}>
+            {PREVIOUS_COMPANY_DOCS.map(renderDocSlot)}
+          </div>
         </div>
       )}
 

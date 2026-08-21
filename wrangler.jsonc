@@ -17,6 +17,12 @@
       "database_id": "84f11ae7-0493-4c60-9cb3-cf1b585304bd"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "DOCUMENTS",
+      "bucket_name": "hrms-documents"
+    }
+  ],
   "vars": {
     "JWT_ISSUER": "hrms"
   }
