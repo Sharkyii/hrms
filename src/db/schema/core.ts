@@ -10,6 +10,8 @@ export const employeeTypeValues = [
   "contract",
 ] as const;
 
+export const employeeCategoryValues = ["skilled", "semi_skilled", "unskilled"] as const;
+
 export const employees = sqliteTable("employees", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   employeeCode: text("employee_code").notNull().unique(),
@@ -19,8 +21,11 @@ export const employees = sqliteTable("employees", {
   employeeType: text("employee_type", { enum: employeeTypeValues }).notNull(),
   department: text("department"),
   designation: text("designation"),
+  category: text("category", { enum: employeeCategoryValues }),
   reportingManagerId: integer("reporting_manager_id"),
   dateOfJoining: text("date_of_joining").notNull(),
+  // Defaults to 3 months after joining but is editable — probation can be extended per the handbook.
+  confirmationDate: text("confirmation_date"),
   status: text("status", { enum: ["active", "exited"] }).notNull().default("active"),
   createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
   updatedAt: text("updated_at").notNull().default(sql`(current_timestamp)`),

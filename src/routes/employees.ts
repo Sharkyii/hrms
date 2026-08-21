@@ -5,6 +5,7 @@ import { getDb } from "../db/client";
 import {
   employees,
   employeeTypeValues,
+  employeeCategoryValues,
   attendanceRecords,
   payslips,
   payrollRuns,
@@ -17,13 +18,24 @@ import {
   assetAssignments,
   assets,
   workLogEntries,
+  salaryStructures,
+  salaryComponents,
+  statutorySettings,
+  employeePayrollDetails,
+  employeeExtendedDetails,
 } from "../db/schema";
-import { computePayableDays } from "../lib/payroll-engine";
+import { computePayableDays, computeStatutory } from "../lib/payroll-engine";
 import { requireAuth, requirePermission } from "../middleware/auth";
 import type { Env } from "../types";
 
 const app = new Hono<{ Bindings: Env }>();
 app.use("*", requireAuth);
+
+function addMonths(dateStr: string, months: number): string {
+  const d = new Date(dateStr);
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
 
 const createEmployeeSchema = z.object({
   employeeCode: z.string().trim().min(1),
@@ -33,6 +45,7 @@ const createEmployeeSchema = z.object({
   employeeType: z.enum(employeeTypeValues),
   department: z.string().trim().min(1).optional(),
   designation: z.string().trim().min(1).optional(),
+  category: z.enum(employeeCategoryValues).optional(),
   reportingManagerId: z.number().int().positive().optional(),
   dateOfJoining: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "dateOfJoining must be YYYY-MM-DD"),
 });
@@ -135,6 +148,55 @@ app.get("/:id/profile", async (c) => {
       }));
   }
 
+  let payrollDetails: unknown = null;
+  let ctcBreakdown: unknown = null;
+  let extendedDetails: unknown = null;
+  if (canViewSalary) {
+    payrollDetails = (await db.select().from(employeePayrollDetails).where(eq(employeePayrollDetails.employeeId, id)).get()) ?? null;
+    extendedDetails = (await db.select().from(employeeExtendedDetails).where(eq(employeeExtendedDetails.employeeId, id)).get()) ?? null;
+
+    const structures = await db
+      .select()
+      .from(salaryStructures)
+      .where(eq(salaryStructures.employeeId, id))
+      .orderBy(salaryStructures.effectiveFrom)
+      .all();
+    const currentStructure = structures.at(-1);
+    if (currentStructure) {
+      const components = await db.select().from(salaryComponents).where(eq(salaryComponents.structureId, currentStructure.id)).all();
+      const earningComponents = components.filter((cmp) => cmp.type === "earning");
+      const deductionComponents = components.filter((cmp) => cmp.type === "deduction");
+      const otherAllowance = earningComponents.reduce((sum, cmp) => sum + cmp.amount, 0);
+      const componentDeductions = deductionComponents.reduce((sum, cmp) => sum + cmp.amount, 0);
+      const fixedGross = currentStructure.basic + currentStructure.hra + otherAllowance;
+
+      const settingsRows = await db.select().from(statutorySettings).all();
+      const settings = settingsRows.at(-1);
+      if (settings) {
+        const statutory = computeStatutory(currentStructure.basic, fixedGross, settings);
+        const totalDeduction = statutory.pfEmployee + statutory.esiEmployee + statutory.professionalTax + componentDeductions;
+        ctcBreakdown = {
+          fixedBasic: currentStructure.basic,
+          fixedHra: currentStructure.hra,
+          fixedOtherAllowance: otherAllowance,
+          fixedGrossSalary: fixedGross,
+          esiEmployerPct: settings.esiEmployerPct,
+          esiEmployeePct: settings.esiEmployeePct,
+          esiEmployer: statutory.esiEmployer,
+          esiEmployee: statutory.esiEmployee,
+          pfEmployerPct: settings.pfEmployerPct,
+          pfEmployeePct: settings.pfEmployeePct,
+          pfEmployer: statutory.pfEmployer,
+          pfEmployee: statutory.pfEmployee,
+          professionalTax: statutory.professionalTax,
+          otherDeductions: componentDeductions,
+          totalDeduction,
+          netPay: fixedGross - totalDeduction,
+        };
+      }
+    }
+  }
+
   const cycles = await db.select().from(kraCycles).all();
   const openCycle = cycles.find((cy) => cy.status === "open") ?? cycles.at(-1) ?? null;
   let kraGoalsWithRatings: unknown[] = [];
@@ -182,6 +244,9 @@ app.get("/:id/profile", async (c) => {
       recent: recentAttendance,
     },
     payslips: canViewSalary ? payslipHistory : null,
+    payrollDetails,
+    ctcBreakdown,
+    extendedDetails,
     kra: { cycleName: openCycle?.name ?? null, goals: kraGoalsWithRatings },
     leave: {
       balances: balances.map((b) => ({ leaveType: b.type.name, allocated: b.balance.allocated, used: b.balance.used })),
@@ -190,6 +255,23 @@ app.get("/:id/profile", async (c) => {
     assets: assignedAssets.map((a) => a.asset),
     workLog,
   });
+});
+
+// Personal details, emergency contacts, and previous-employer history — HR/founder only, since
+// it includes the employee's last-drawn salary at their previous job.
+app.put("/:id/extended-details", requirePermission("employee.manage"), async (c) => {
+  const id = Number(c.req.param("id"));
+  const body = await c.req.json<Partial<typeof employeeExtendedDetails.$inferInsert>>();
+  const db = getDb(c.env.DB);
+
+  const existing = await db.select().from(employeeExtendedDetails).where(eq(employeeExtendedDetails.employeeId, id)).get();
+  const patch = { ...body, employeeId: id, updatedAt: new Date().toISOString() };
+  delete (patch as Record<string, unknown>).id;
+
+  const saved = existing
+    ? await db.update(employeeExtendedDetails).set(patch).where(eq(employeeExtendedDetails.employeeId, id)).returning().get()
+    : await db.insert(employeeExtendedDetails).values(patch).returning().get();
+  return c.json(saved);
 });
 
 app.post("/", requirePermission("employee.manage"), async (c) => {
@@ -208,8 +290,10 @@ app.post("/", requirePermission("employee.manage"), async (c) => {
       employeeType: body.employeeType,
       department: body.department ?? null,
       designation: body.designation ?? null,
+      category: body.category ?? null,
       reportingManagerId: body.reportingManagerId ?? null,
       dateOfJoining: body.dateOfJoining,
+      confirmationDate: addMonths(body.dateOfJoining, 3),
     })
     .returning()
     .get();
@@ -226,7 +310,17 @@ app.put("/:id", requirePermission("employee.manage"), async (c) => {
   if (!existing) return c.json({ error: "Not found" }, 404);
 
   const patch: Partial<typeof employees.$inferInsert> = { updatedAt: new Date().toISOString() };
-  const editable = ["fullName", "phone", "employeeType", "department", "designation", "reportingManagerId", "status"] as const;
+  const editable = [
+    "fullName",
+    "phone",
+    "employeeType",
+    "department",
+    "designation",
+    "category",
+    "reportingManagerId",
+    "status",
+    "confirmationDate",
+  ] as const;
   for (const field of editable) {
     if (field in body) (patch as Record<string, unknown>)[field] = body[field];
   }

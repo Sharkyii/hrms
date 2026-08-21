@@ -17,8 +17,10 @@ export interface Employee {
   employeeType: string;
   department: string | null;
   designation: string | null;
+  category: string | null;
   reportingManagerId: number | null;
   dateOfJoining: string;
+  confirmationDate: string | null;
   status: string;
 }
 
