@@ -402,13 +402,16 @@ export function EmployeeDetail() {
                   <tr><td>Fixed HRA</td><td style={{ textAlign: "right" }}>{profile.ctcBreakdown.fixedHra.toFixed(2)}</td></tr>
                   <tr><td>Fixed Other Allowance</td><td style={{ textAlign: "right" }}>{profile.ctcBreakdown.fixedOtherAllowance.toFixed(2)}</td></tr>
                   <tr><td><strong>Fixed Gross Salary</strong></td><td style={{ textAlign: "right" }}><strong>{profile.ctcBreakdown.fixedGrossSalary.toFixed(2)}</strong></td></tr>
-                  <tr><td colSpan={2}><br /><strong>Deductions</strong></td></tr>
-                  <tr><td>ESIC — Employer ({profile.ctcBreakdown.esiEmployerPct}%) / Employee ({profile.ctcBreakdown.esiEmployeePct}%)</td><td style={{ textAlign: "right" }}>{profile.ctcBreakdown.esiEmployee.toFixed(2)}</td></tr>
-                  <tr><td>PF — Employer ({profile.ctcBreakdown.pfEmployerPct}%) / Employee ({profile.ctcBreakdown.pfEmployeePct}%)</td><td style={{ textAlign: "right" }}>{profile.ctcBreakdown.pfEmployee.toFixed(2)}</td></tr>
+                  <tr><td colSpan={2}><br /><strong>Deductions — Employee</strong></td></tr>
+                  <tr><td>ESIC — Employee ({profile.ctcBreakdown.esiEmployeePct}%)</td><td style={{ textAlign: "right" }}>{profile.ctcBreakdown.esiEmployee.toFixed(2)}</td></tr>
+                  <tr><td>PF — Employee ({profile.ctcBreakdown.pfEmployeePct}%)</td><td style={{ textAlign: "right" }}>{profile.ctcBreakdown.pfEmployee.toFixed(2)}</td></tr>
                   <tr><td>PT</td><td style={{ textAlign: "right" }}>{profile.ctcBreakdown.professionalTax.toFixed(2)}</td></tr>
                   {profile.ctcBreakdown.otherDeductions > 0 && <tr><td>Other deductions</td><td style={{ textAlign: "right" }}>{profile.ctcBreakdown.otherDeductions.toFixed(2)}</td></tr>}
-                  <tr><td><strong>Total Deduction</strong></td><td style={{ textAlign: "right" }}><strong>{profile.ctcBreakdown.totalDeduction.toFixed(2)}</strong></td></tr>
+                  <tr><td><strong>Total Deduction (Employee)</strong></td><td style={{ textAlign: "right" }}><strong>{profile.ctcBreakdown.totalDeduction.toFixed(2)}</strong></td></tr>
                   <tr><td><strong>Net Pay</strong></td><td style={{ textAlign: "right" }}><strong>{profile.ctcBreakdown.netPay.toFixed(2)}</strong></td></tr>
+                  <tr><td colSpan={2}><br /><strong>Employer contribution</strong> <span className="muted" style={{ fontWeight: 400 }}>(company cost, not deducted from pay)</span></td></tr>
+                  <tr><td>ESIC — Employer ({profile.ctcBreakdown.esiEmployerPct}%)</td><td style={{ textAlign: "right" }}>{profile.ctcBreakdown.esiEmployer.toFixed(2)}</td></tr>
+                  <tr><td>PF — Employer ({profile.ctcBreakdown.pfEmployerPct}%)</td><td style={{ textAlign: "right" }}>{profile.ctcBreakdown.pfEmployer.toFixed(2)}</td></tr>
                 </tbody>
               </table>
             </div>
@@ -465,7 +468,7 @@ export function EmployeeDetail() {
         </div>
       </div>
 
-      {(editing || profile.extendedDetails?.previousCompanyName || documents.some((d) => PREVIOUS_COMPANY_DOCS.some((s) => s.type === d.docType))) && (
+      {(canUploadDocs || editing || profile.extendedDetails?.previousCompanyName || documents.some((d) => PREVIOUS_COMPANY_DOCS.some((s) => s.type === d.docType))) && (
         <div className="card">
           <h2>Previous company details</h2>
           <div className="form-row">
