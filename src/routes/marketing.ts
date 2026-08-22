@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { eq, desc } from "drizzle-orm";
 import { getDb } from "../db/client";
 import { retailerVisits, employees } from "../db/schema";
-import { requireAuth, requirePermission } from "../middleware/auth";
+import { requireAuth } from "../middleware/auth";
 import type { Env } from "../types";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -11,22 +11,23 @@ app.use("*", requireAuth);
 app.get("/visits", async (c) => {
   const session = c.get("session");
   const db = getDb(c.env.DB);
-  
+
   const canViewAll = session.perms.includes("employee.manage") || session.perms.includes("employee.view_all");
-  
+  const canViewTeam = session.perms.includes("employee.view_team");
+
   const visits = await db
     .select({ visit: retailerVisits, employee: employees })
     .from(retailerVisits)
     .innerJoin(employees, eq(retailerVisits.employeeId, employees.id))
     .orderBy(desc(retailerVisits.createdAt))
     .all();
-    
-  if (canViewAll) {
-    return c.json(visits);
-  }
-  
-  const myVisits = visits.filter(v => v.visit.employeeId === session.employeeId);
-  return c.json(myVisits);
+
+  if (canViewAll) return c.json(visits);
+
+  const scoped = visits.filter(
+    (v) => v.visit.employeeId === session.employeeId || (canViewTeam && v.employee.reportingManagerId === session.employeeId),
+  );
+  return c.json(scoped);
 });
 
 app.post("/visits", async (c) => {
@@ -64,11 +65,21 @@ app.post("/visits", async (c) => {
 });
 
 app.get("/visits/:id/photo", async (c) => {
+  const session = c.get("session");
   const id = Number(c.req.param("id"));
   const db = getDb(c.env.DB);
   const visit = await db.select().from(retailerVisits).where(eq(retailerVisits.id, id)).get();
   if (!visit || !visit.photoR2Key) return c.json({ error: "Not found" }, 404);
-  
+
+  const canViewAll = session.perms.includes("employee.manage") || session.perms.includes("employee.view_all");
+  const isSelf = visit.employeeId === session.employeeId;
+  let isTheirManager = false;
+  if (!canViewAll && !isSelf && session.perms.includes("employee.view_team")) {
+    const owner = await db.select().from(employees).where(eq(employees.id, visit.employeeId)).get();
+    isTheirManager = owner?.reportingManagerId === session.employeeId;
+  }
+  if (!canViewAll && !isSelf && !isTheirManager) return c.json({ error: "Forbidden" }, 403);
+
   const object = await c.env.DOCUMENTS.get(visit.photoR2Key);
   if (!object) return c.json({ error: "File missing" }, 404);
 
@@ -79,16 +90,26 @@ app.get("/visits/:id/photo", async (c) => {
   });
 });
 
-app.put("/visits/:id/status", requirePermission("employee.manage"), async (c) => {
+app.put("/visits/:id/status", async (c) => {
   const session = c.get("session");
   const id = Number(c.req.param("id"));
   const { status } = await c.req.json<{ status?: "verified" | "rejected" }>();
-  
+
   if (!status || !["verified", "rejected"].includes(status)) {
     return c.json({ error: "Invalid status" }, 400);
   }
-  
+
   const db = getDb(c.env.DB);
+  const visit = await db.select().from(retailerVisits).where(eq(retailerVisits.id, id)).get();
+  if (!visit) return c.json({ error: "Not found" }, 404);
+
+  const canVerifyAll = session.perms.includes("employee.manage") || session.perms.includes("employee.view_all");
+  let isTheirManager = false;
+  if (!canVerifyAll && session.perms.includes("employee.view_team")) {
+    const owner = await db.select().from(employees).where(eq(employees.id, visit.employeeId)).get();
+    isTheirManager = owner?.reportingManagerId === session.employeeId;
+  }
+  if (!canVerifyAll && !isTheirManager) return c.json({ error: "Forbidden" }, 403);
   const updated = await db.update(retailerVisits).set({
     status,
     verifiedByUserId: session.sub,

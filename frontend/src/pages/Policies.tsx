@@ -50,16 +50,22 @@ export function Policies() {
           return acc;
         }, {} as Record<string, Policy[]>)
       ).map(([category, catPolicies]) => (
-        <details key={category} className="card" style={{ padding: "0", overflow: "hidden" }} open>
-          <summary style={{ padding: "16px", cursor: "pointer", fontWeight: "bold", fontSize: "1.1em", backgroundColor: "rgba(0,0,0,0.02)", listStyle: "none", display: "flex", justifyContent: "space-between" }}>
-            {category} <Badge value={`${catPolicies.length} policies`} />
+        <details key={category} className="card policy-folder">
+          <summary className="policy-folder-summary">
+            <span>{category}</span>
+            <Badge value={`${catPolicies.length}`} />
           </summary>
-          <div style={{ padding: "16px", borderTop: "1px solid var(--border)" }}>
+          <div className="list" style={{ marginTop: 14 }}>
             {catPolicies.map((p) => (
-              <div key={p.id} style={{ marginBottom: "24px" }}>
-                <h3 style={{ margin: "0 0 8px 0" }}>{p.title} <span className="muted" style={{ fontWeight: "normal", fontSize: "0.85em" }}>v{p.version}</span></h3>
-                <p style={{ whiteSpace: "pre-wrap", margin: 0, color: "var(--text)" }}>{p.content}</p>
-              </div>
+              <details key={p.id} className="policy-item">
+                <summary className="list-row clickable policy-item-summary">
+                  <div className="main">
+                    <div className="title">{p.title}</div>
+                  </div>
+                  <span className="muted">v{p.version}</span>
+                </summary>
+                <p className="policy-item-content">{p.content}</p>
+              </details>
             ))}
           </div>
         </details>

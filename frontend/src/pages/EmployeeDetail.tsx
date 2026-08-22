@@ -266,16 +266,21 @@ export function EmployeeDetail() {
   async function saveDetails() {
     setSaving(true);
     try {
-      await Promise.all([
+      const calls = [
         api.put(`/employees/${id}`, { category: coreForm.category || null, confirmationDate: coreForm.confirmationDate || null }),
         api.put(`/payroll/employee-payroll-details/${id}`, payrollForm),
-        api.put(`/payroll/employee-bank-details/${id}`, bankForm),
         api.put(`/employees/${id}/extended-details`, {
           ...extForm,
           previousCompanySalaryMonthly: extForm.previousCompanySalaryMonthly ? Number(extForm.previousCompanySalaryMonthly) : null,
           previousCompanySalaryAnnualCtc: extForm.previousCompanySalaryAnnualCtc ? Number(extForm.previousCompanySalaryAnnualCtc) : null,
         }),
-      ]);
+      ];
+      // Bank details has required fields on the backend — only send it if the user actually filled them in,
+      // otherwise this call 400s and (via Promise.all) aborts saving everything else in this form.
+      if (bankForm.accountHolderName.trim() && bankForm.accountNumber.trim() && bankForm.ifsc.trim()) {
+        calls.push(api.put(`/payroll/bank-details/${id}`, bankForm));
+      }
+      await Promise.all(calls);
       toast.success("Details saved.");
       setEditing(false);
       await load();
