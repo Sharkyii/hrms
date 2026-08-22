@@ -17,6 +17,7 @@ import { Queries } from "./pages/Queries";
 import { Exit } from "./pages/Exit";
 import { Access } from "./pages/Access";
 import { Profile } from "./pages/Profile";
+import { RetailerVisits } from "./pages/RetailerVisits";
 
 function ProtectedLayout() {
   const { session, loading } = useAuth();
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="/exit" element={<Exit />} />
         <Route path="/access" element={<Access />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/retailer-visits" element={<RetailerVisits />} />
       </Route>
     </Routes>
   );

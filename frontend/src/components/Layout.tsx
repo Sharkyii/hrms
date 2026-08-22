@@ -28,6 +28,7 @@ export function Layout() {
     { to: "/assets", label: "Assets", icon: "assets", show: true },
     { to: "/policies", label: "Policies", icon: "policies", show: true },
     { to: "/queries", label: "Queries", icon: "queries", show: true },
+    { to: "/retailer-visits", label: "Retailer Visits", icon: "attendance", show: true },
     { to: "/exit", label: "Exit", icon: "exit", show: true },
     { to: "/access", label: "Access & Roles", icon: "access", show: can("employee.manage") },
   ];

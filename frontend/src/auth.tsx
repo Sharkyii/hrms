@@ -22,6 +22,8 @@ export interface Employee {
   dateOfJoining: string;
   confirmationDate: string | null;
   status: string;
+  kraScore?: number | null;
+  kraCategory?: string | null;
 }
 
 interface AuthState {

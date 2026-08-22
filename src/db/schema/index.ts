@@ -4,3 +4,4 @@ export * from "./payroll";
 export * from "./performance";
 export * from "./exit";
 export * from "./profile";
+export * from "./marketing";

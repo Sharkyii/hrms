@@ -256,6 +256,13 @@ app.put("/employee-payroll-details/:employeeId", requirePermission("payroll.proc
 });
 
 // --- Bank details ---
+app.get("/bank-details/:employeeId", requirePermission("payroll.process"), async (c) => {
+  const employeeId = Number(c.req.param("employeeId"));
+  const db = getDb(c.env.DB);
+  const row = await db.select().from(employeeBankDetails).where(eq(employeeBankDetails.employeeId, employeeId)).get();
+  return c.json(row ?? null);
+});
+
 app.put("/bank-details/:employeeId", requirePermission("payroll.process"), async (c) => {
   const employeeId = Number(c.req.param("employeeId"));
   const body = await c.req.json<{ accountHolderName?: string; accountNumber?: string; ifsc?: string; bankName?: string }>();

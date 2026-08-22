@@ -9,6 +9,7 @@ import type { Employee } from "../auth";
 
 interface Cycle { id: number; name: string; startDate: string; endDate: string; status: string }
 interface Goal { id: number; employeeId: number; title: string; weightPct: number; target: string | null }
+interface KraScore { score: number | null; weightRatedPct: number; category: string | null }
 interface TaskRating { rating: number; comments: string | null; ratedAt: string }
 interface Task {
   id: number;
@@ -29,6 +30,7 @@ export function Kra() {
   const toast = useToast();
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [myScore, setMyScore] = useState<KraScore | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [directory, setDirectory] = useState<Array<{ id: number; fullName: string; department: string | null; designation: string | null }>>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -36,13 +38,20 @@ export function Kra() {
   const [goalForm, setGoalForm] = useState({ employeeId: "", cycleId: "", title: "", weightPct: "" });
   const [taskForm, setTaskForm] = useState({ title: "", description: "", assignedToEmployeeId: "", dueDate: "" });
   const [rateDraft, setRateDraft] = useState<Record<number, { rating: string; comments: string }>>({});
+  const [teamScores, setTeamScores] = useState<Array<{ employeeId: number; score: number | null; weightRatedPct: number; category: string | null }>>([]);
 
   const canManageTeam = can("kra.rate_team") || can("kra.view_all");
 
   async function load() {
     setCycles(await api.get<Cycle[]>("/kra/cycles"));
-    if (employee) setGoals(await api.get<Goal[]>(`/kra/goals?employeeId=${employee.id}`));
-    if (canManageTeam) setEmployees(await api.get<Employee[]>("/employees"));
+    if (employee) {
+      setGoals(await api.get<Goal[]>(`/kra/goals?employeeId=${employee.id}`));
+      setMyScore(await api.get<KraScore>(`/kra/score?employeeId=${employee.id}`));
+    }
+    if (canManageTeam) {
+      setEmployees(await api.get<Employee[]>("/employees"));
+      setTeamScores(await api.get("/kra/team-scores"));
+    }
     setDirectory(await api.get("/employees/directory"));
     setTasks(await api.get<Task[]>("/tasks"));
   }
@@ -147,7 +156,13 @@ export function Kra() {
       )}
 
       <div className="card">
-        <h2>My goals</h2>
+        <h2>My goals {myScore?.category && <Badge value={myScore.category} />}</h2>
+        {myScore?.score !== null && myScore?.score !== undefined && (
+          <div className="stat-grid" style={{ marginBottom: 16 }}>
+            <div className="stat"><div className="value">{myScore.score.toFixed(2)} / 5</div><div className="label">Weighted score</div></div>
+            <div className="stat"><div className="value">{myScore.weightRatedPct}%</div><div className="label">Of cycle weight rated</div></div>
+          </div>
+        )}
         {goals.length === 0 ? (
           <p className="empty">No goals set for this cycle yet.</p>
         ) : (
@@ -172,6 +187,33 @@ export function Kra() {
           </div>
         )}
       </div>
+
+      {canManageTeam && (
+        <div className="card">
+          <h2>Team KRA Scores</h2>
+          {teamScores.length === 0 ? (
+            <p className="empty">No team scores available.</p>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Employee</th><th>Weighted Score</th><th>Category</th></tr></thead>
+                <tbody>
+                  {teamScores.filter(s => s.employeeId !== employee?.id).map((s) => {
+                    const emp = employees.find((e) => e.id === s.employeeId);
+                    return (
+                      <tr key={s.employeeId}>
+                        <td>{emp?.fullName ?? `ID ${s.employeeId}`}</td>
+                        <td>{s.score !== null ? `${s.score.toFixed(2)} / 5 (${s.weightRatedPct}% rated)` : "—"}</td>
+                        <td>{s.category ? <Badge value={s.category} /> : "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {myRatedTasks.length > 0 && (
         <div className="card">

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../auth";
 import { api } from "../api";
 import { useToast } from "../components/Toast";
+import { Badge } from "../components/Badge";
 
 interface Policy { id: number; title: string; content: string; category: string | null; version: number }
 
@@ -41,12 +42,27 @@ export function Policies() {
 
       {policies.length === 0 && <p className="empty">No policies published yet.</p>}
 
-      {policies.map((p) => (
-        <div className="card" key={p.id}>
-          <h2>{p.title} <span className="muted">v{p.version}</span></h2>
-          {p.category && <p className="muted">{p.category}</p>}
-          <p style={{ whiteSpace: "pre-wrap" }}>{p.content}</p>
-        </div>
+      {Object.entries(
+        policies.reduce((acc, p) => {
+          const cat = p.category?.trim() || "Uncategorized";
+          acc[cat] = acc[cat] || [];
+          acc[cat].push(p);
+          return acc;
+        }, {} as Record<string, Policy[]>)
+      ).map(([category, catPolicies]) => (
+        <details key={category} className="card" style={{ padding: "0", overflow: "hidden" }} open>
+          <summary style={{ padding: "16px", cursor: "pointer", fontWeight: "bold", fontSize: "1.1em", backgroundColor: "rgba(0,0,0,0.02)", listStyle: "none", display: "flex", justifyContent: "space-between" }}>
+            {category} <Badge value={`${catPolicies.length} policies`} />
+          </summary>
+          <div style={{ padding: "16px", borderTop: "1px solid var(--border)" }}>
+            {catPolicies.map((p) => (
+              <div key={p.id} style={{ marginBottom: "24px" }}>
+                <h3 style={{ margin: "0 0 8px 0" }}>{p.title} <span className="muted" style={{ fontWeight: "normal", fontSize: "0.85em" }}>v{p.version}</span></h3>
+                <p style={{ whiteSpace: "pre-wrap", margin: 0, color: "var(--text)" }}>{p.content}</p>
+              </div>
+            ))}
+          </div>
+        </details>
       ))}
     </div>
   );

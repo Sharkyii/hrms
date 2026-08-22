@@ -22,11 +22,13 @@ import {
   salaryComponents,
   statutorySettings,
   employeePayrollDetails,
+  employeeBankDetails,
   employeeExtendedDetails,
   employeeDocuments,
   employeeDocumentTypeValues,
 } from "../db/schema";
 import { computePayableDays, computeStatutory } from "../lib/payroll-engine";
+import { computeKraScore } from "../lib/kra-score";
 import { requireAuth, requirePermission } from "../middleware/auth";
 import type { Env } from "../types";
 
@@ -56,20 +58,35 @@ app.get("/", async (c) => {
   const session = c.get("session");
   const db = getDb(c.env.DB);
 
+  let rows = [];
   if (session.perms.includes("employee.view_all")) {
-    return c.json(await db.select().from(employees).all());
-  }
-  if (session.perms.includes("employee.view_team")) {
-    const rows = await db
+    rows = await db.select().from(employees).all();
+  } else if (session.perms.includes("employee.view_team")) {
+    rows = await db
       .select()
       .from(employees)
       .where(or(eq(employees.reportingManagerId, session.employeeId), eq(employees.id, session.employeeId)))
       .all();
-    return c.json(rows);
+  } else {
+    const self = await db.select().from(employees).where(eq(employees.id, session.employeeId)).get();
+    rows = self ? [self] : [];
   }
-  // employee.view_own only
-  const self = await db.select().from(employees).where(eq(employees.id, session.employeeId)).get();
-  return c.json(self ? [self] : []);
+
+  const cycles = await db.select().from(kraCycles).all();
+  const openCycle = cycles.find((cy) => cy.status === "open") ?? cycles.at(-1) ?? null;
+  if (openCycle) {
+    const goals = await db.select().from(kraGoals).where(eq(kraGoals.cycleId, openCycle.id)).all();
+    const ratings = await db.select().from(kraRatings).all();
+    const ratingsByGoalId = new Map(ratings.map((r) => [r.goalId, r]));
+    
+    return c.json(rows.map(emp => {
+      const empGoals = goals.filter(g => g.employeeId === emp.id);
+      const score = computeKraScore(empGoals, ratingsByGoalId);
+      return { ...emp, kraScore: score.score, kraCategory: score.category };
+    }));
+  }
+
+  return c.json(rows.map(emp => ({ ...emp, kraScore: null, kraCategory: null })));
 });
 
 // Minimal, name-only listing any authenticated employee can see — used to pick a coworker when
@@ -153,9 +170,11 @@ app.get("/:id/profile", async (c) => {
   let payrollDetails: unknown = null;
   let ctcBreakdown: unknown = null;
   let extendedDetails: unknown = null;
+  let bankDetails: unknown = null;
   if (canViewSalary) {
     payrollDetails = (await db.select().from(employeePayrollDetails).where(eq(employeePayrollDetails.employeeId, id)).get()) ?? null;
     extendedDetails = (await db.select().from(employeeExtendedDetails).where(eq(employeeExtendedDetails.employeeId, id)).get()) ?? null;
+    bankDetails = (await db.select().from(employeeBankDetails).where(eq(employeeBankDetails.employeeId, id)).get()) ?? null;
 
     const structures = await db
       .select()
@@ -202,10 +221,12 @@ app.get("/:id/profile", async (c) => {
   const cycles = await db.select().from(kraCycles).all();
   const openCycle = cycles.find((cy) => cy.status === "open") ?? cycles.at(-1) ?? null;
   let kraGoalsWithRatings: unknown[] = [];
+  let kraScore: ReturnType<typeof computeKraScore> = { score: null, weightRatedPct: 0, category: null };
   if (openCycle) {
     const goals = await db.select().from(kraGoals).where(and(eq(kraGoals.employeeId, id), eq(kraGoals.cycleId, openCycle.id))).all();
     const ratings = await db.select().from(kraRatings).all();
     kraGoalsWithRatings = goals.map((g) => ({ ...g, rating: ratings.find((r) => r.goalId === g.id) ?? null }));
+    kraScore = computeKraScore(goals, new Map(ratings.map((r) => [r.goalId, r])));
   }
 
   const balances = await db
@@ -249,7 +270,8 @@ app.get("/:id/profile", async (c) => {
     payrollDetails,
     ctcBreakdown,
     extendedDetails,
-    kra: { cycleName: openCycle?.name ?? null, goals: kraGoalsWithRatings },
+    bankDetails,
+    kra: { cycleName: openCycle?.name ?? null, goals: kraGoalsWithRatings, ...kraScore },
     leave: {
       balances: balances.map((b) => ({ leaveType: b.type.name, allocated: b.balance.allocated, used: b.balance.used })),
       recent: recentLeave,

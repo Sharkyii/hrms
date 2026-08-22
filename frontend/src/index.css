@@ -139,13 +139,13 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
   letter-spacing: 0.03em;
   border: 1px solid var(--border-strong);
 }
-.badge.high, .badge.approved, .badge.auto_approved, .badge.locked, .badge.active, .badge.open, .badge.ready, .badge.hired {
+.badge.high, .badge.approved, .badge.auto_approved, .badge.locked, .badge.active, .badge.open, .badge.ready, .badge.hired, .badge.high_performer, .badge.verified {
   background: var(--fill); color: #fff;
 }
-.badge.medium, .badge.preview, .badge.pending, .badge.pending_manager, .badge.in_progress, .badge.in_clearance {
+.badge.medium, .badge.preview, .badge.pending, .badge.pending_manager, .badge.in_progress, .badge.in_clearance, .badge.meets_expectations {
   background: #fff; color: var(--text); border-style: dashed;
 }
-.badge.low, .badge.rejected, .badge.duplicate, .badge.unknown_id, .badge.exited, .badge.closed {
+.badge.low, .badge.rejected, .badge.duplicate, .badge.unknown_id, .badge.exited, .badge.closed, .badge.needs_improvement {
   background: #fff; color: var(--muted); border-color: var(--border);
 }
 .badge.draft { background: #fff; color: var(--muted); border-color: var(--border); }

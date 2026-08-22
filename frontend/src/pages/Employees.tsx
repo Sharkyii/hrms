@@ -137,6 +137,13 @@ export function Employees() {
                   <div className="subtitle">{e.designation ? `${e.designation} · ` : ""}{e.department ?? "No department"}</div>
                 </div>
                 <div className="meta">
+                  {e.kraScore !== null && e.kraScore !== undefined && (
+                    <div className="col">
+                      <div className="k">KRA Score</div>
+                      <div className="v">{e.kraScore.toFixed(2)} / 5</div>
+                    </div>
+                  )}
+                  {e.kraCategory && <Badge value={e.kraCategory} />}
                   <div className="col">
                     <div className="k">Type</div>
                     <div className="v">{e.employeeType.replace(/_/g, " ")}</div>

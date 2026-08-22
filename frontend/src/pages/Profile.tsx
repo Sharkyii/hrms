@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, useEffect } from "react";
 import { useAuth } from "../auth";
 import { api, ApiError } from "../api";
 import { useToast } from "../components/Toast";
@@ -11,6 +11,15 @@ export function Profile() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [bankDetails, setBankDetails] = useState<{ bankName: string | null; accountHolderName: string; accountNumber: string; ifsc: string } | null>(null);
+
+  useEffect(() => {
+    if (employee?.id) {
+      api.get(`/employees/${employee.id}/profile`).then((p: any) => {
+        setBankDetails(p.bankDetails);
+      }).catch(console.error);
+    }
+  }, [employee?.id]);
 
   async function changePassword(e: FormEvent) {
     e.preventDefault();
@@ -45,6 +54,18 @@ export function Profile() {
         <p className="muted">{employee?.email}</p>
         <p className="muted">Role: {session?.role}</p>
       </div>
+
+      {bankDetails && (
+        <div className="card">
+          <h2>Bank details</h2>
+          <div className="form-row">
+            <div><label>Bank name</label><div>{bankDetails.bankName ?? "—"}</div></div>
+            <div><label>Account holder</label><div>{bankDetails.accountHolderName ?? "—"}</div></div>
+            <div><label>Account number</label><div>{bankDetails.accountNumber ?? "—"}</div></div>
+            <div><label>IFSC</label><div>{bankDetails.ifsc ?? "—"}</div></div>
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <h2>Change password</h2>

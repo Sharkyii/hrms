@@ -15,6 +15,7 @@ import exit from "./routes/exit";
 import analytics from "./routes/analytics";
 import worklog from "./routes/worklog";
 import tasks from "./routes/tasks";
+import marketing from "./routes/marketing";
 import type { Env } from "./types";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -36,5 +37,6 @@ app.route("/api/exit", exit);
 app.route("/api/analytics", analytics);
 app.route("/api/worklog", worklog);
 app.route("/api/tasks", tasks);
+app.route("/api/marketing", marketing);
 
 export default app;

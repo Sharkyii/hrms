@@ -132,7 +132,8 @@ interface Profile {
   payrollDetails: PayrollDetails | null;
   ctcBreakdown: CtcBreakdown | null;
   extendedDetails: ExtendedDetails | null;
-  kra: { cycleName: string | null; goals: KraGoal[] };
+  bankDetails: { bankName: string | null; accountHolderName: string; accountNumber: string; ifsc: string } | null;
+  kra: { cycleName: string | null; goals: KraGoal[]; score: number | null; weightRatedPct: number; category: string | null };
   leave: { balances: Array<{ leaveType: string; allocated: number; used: number }>; recent: LeaveRequest[] };
   assets: Asset[];
   workLog: WorkLogEntry[];
@@ -169,6 +170,7 @@ export function EmployeeDetail() {
   const [saving, setSaving] = useState(false);
   const [coreForm, setCoreForm] = useState({ category: "", confirmationDate: "" });
   const [payrollForm, setPayrollForm] = useState({ panNumber: "", uanNumber: "", pfAccountNumber: "", esiNumber: "" });
+  const [bankForm, setBankForm] = useState({ bankName: "", accountHolderName: "", accountNumber: "", ifsc: "" });
   const [extForm, setExtForm] = useState({
     dateOfBirth: "", gender: "", livingLocation: "",
     emergencyContact1Name: "", emergencyContact1Phone: "", emergencyContact1Relation: "",
@@ -190,6 +192,12 @@ export function EmployeeDetail() {
           uanNumber: p.payrollDetails?.uanNumber ?? "",
           pfAccountNumber: p.payrollDetails?.pfAccountNumber ?? "",
           esiNumber: p.payrollDetails?.esiNumber ?? "",
+        });
+        setBankForm({
+          bankName: p.bankDetails?.bankName ?? "",
+          accountHolderName: p.bankDetails?.accountHolderName ?? "",
+          accountNumber: p.bankDetails?.accountNumber ?? "",
+          ifsc: p.bankDetails?.ifsc ?? "",
         });
         setExtForm({
           dateOfBirth: p.extendedDetails?.dateOfBirth ?? "",
@@ -261,6 +269,7 @@ export function EmployeeDetail() {
       await Promise.all([
         api.put(`/employees/${id}`, { category: coreForm.category || null, confirmationDate: coreForm.confirmationDate || null }),
         api.put(`/payroll/employee-payroll-details/${id}`, payrollForm),
+        api.put(`/payroll/employee-bank-details/${id}`, bankForm),
         api.put(`/employees/${id}/extended-details`, {
           ...extForm,
           previousCompanySalaryMonthly: extForm.previousCompanySalaryMonthly ? Number(extForm.previousCompanySalaryMonthly) : null,
@@ -416,6 +425,30 @@ export function EmployeeDetail() {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {(editing || profile.bankDetails) && (
+        <div className="card">
+          <h2>Bank details</h2>
+          <div className="form-row">
+            <div className="field">
+              <label>Bank name</label>
+              {editing ? <input value={bankForm.bankName} onChange={(ev) => setBankForm({ ...bankForm, bankName: ev.target.value })} /> : <div>{profile.bankDetails?.bankName ?? "—"}</div>}
+            </div>
+            <div className="field">
+              <label>Account holder</label>
+              {editing ? <input value={bankForm.accountHolderName} onChange={(ev) => setBankForm({ ...bankForm, accountHolderName: ev.target.value })} /> : <div>{profile.bankDetails?.accountHolderName ?? "—"}</div>}
+            </div>
+            <div className="field">
+              <label>Account number</label>
+              {editing ? <input value={bankForm.accountNumber} onChange={(ev) => setBankForm({ ...bankForm, accountNumber: ev.target.value })} /> : <div>{profile.bankDetails?.accountNumber ?? "—"}</div>}
+            </div>
+            <div className="field">
+              <label>IFSC</label>
+              {editing ? <input value={bankForm.ifsc} onChange={(ev) => setBankForm({ ...bankForm, ifsc: ev.target.value })} /> : <div>{profile.bankDetails?.ifsc ?? "—"}</div>}
+            </div>
+          </div>
         </div>
       )}
 
@@ -589,7 +622,16 @@ export function EmployeeDetail() {
       </div>
 
       <div className="card">
-        <h2>KRA — {profile.kra.cycleName ?? "no open cycle"}</h2>
+        <h2>
+          KRA — {profile.kra.cycleName ?? "no open cycle"}
+          {profile.kra.category && <Badge value={profile.kra.category} />}
+        </h2>
+        {profile.kra.score !== null && (
+          <div className="stat-grid" style={{ marginBottom: 16 }}>
+            <div className="stat"><div className="value">{profile.kra.score.toFixed(2)} / 5</div><div className="label">Weighted score</div></div>
+            <div className="stat"><div className="value">{profile.kra.weightRatedPct}%</div><div className="label">Of cycle weight rated</div></div>
+          </div>
+        )}
         {profile.kra.goals.length === 0 ? (
           <p className="empty">No goals set this cycle.</p>
         ) : (

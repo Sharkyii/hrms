@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db/client";
 import { kraCycles, kraGoals, kraRatings, employees } from "../db/schema";
+import { computeKraScore } from "../lib/kra-score";
 import { requireAuth, requirePermission } from "../middleware/auth";
 import type { Env } from "../types";
 
@@ -58,6 +59,74 @@ app.get("/goals", async (c) => {
   if (!canViewAll && !isSelf && !isTheirManager) return c.json({ error: "Forbidden" }, 403);
 
   return c.json(await db.select().from(kraGoals).where(eq(kraGoals.employeeId, employeeId)).all());
+});
+
+// Weighted score + performance category for one employee's cycle — same visibility rule as goals.
+app.get("/score", async (c) => {
+  const session = c.get("session");
+  const employeeId = Number(c.req.query("employeeId") ?? session.employeeId);
+  const db = getDb(c.env.DB);
+
+  const canViewAll = session.perms.includes("kra.view_all");
+  const isSelf = employeeId === session.employeeId;
+  let isTheirManager = false;
+  if (!canViewAll && !isSelf && session.perms.includes("kra.rate_team")) {
+    const target = await db.select().from(employees).where(eq(employees.id, employeeId)).get();
+    isTheirManager = target?.reportingManagerId === session.employeeId;
+  }
+  if (!canViewAll && !isSelf && !isTheirManager) return c.json({ error: "Forbidden" }, 403);
+
+  const cycleIdParam = c.req.query("cycleId");
+  let cycleId = cycleIdParam ? Number(cycleIdParam) : null;
+  if (!cycleId) {
+    const cycles = await db.select().from(kraCycles).all();
+    cycleId = (cycles.find((cy) => cy.status === "open") ?? cycles.at(-1))?.id ?? null;
+  }
+  if (!cycleId) return c.json({ score: null, weightRatedPct: 0, category: null });
+
+  const goals = await db.select().from(kraGoals).where(eq(kraGoals.employeeId, employeeId)).all();
+  const cycleGoals = goals.filter((g) => g.cycleId === cycleId);
+  const ratings = await db.select().from(kraRatings).all();
+  const ratingsByGoalId = new Map(ratings.map((r) => [r.goalId, r]));
+
+  return c.json(computeKraScore(cycleGoals, ratingsByGoalId));
+});
+
+// Returns the score for every employee, subject to the same view permissions (managers see their team,
+// admins see all). Useful for the team scoreboard.
+app.get("/team-scores", async (c) => {
+  const session = c.get("session");
+  const db = getDb(c.env.DB);
+  
+  const canViewAll = session.perms.includes("kra.view_all");
+  const canRateTeam = session.perms.includes("kra.rate_team");
+  
+  let targetEmployees = await db.select().from(employees).where(eq(employees.status, "active")).all();
+  if (!canViewAll) {
+    targetEmployees = targetEmployees.filter(e => e.id === session.employeeId || (canRateTeam && e.reportingManagerId === session.employeeId));
+  }
+
+  const cycleIdParam = c.req.query("cycleId");
+  let cycleId = cycleIdParam ? Number(cycleIdParam) : null;
+  if (!cycleId) {
+    const cycles = await db.select().from(kraCycles).all();
+    cycleId = (cycles.find((cy) => cy.status === "open") ?? cycles.at(-1))?.id ?? null;
+  }
+  if (!cycleId) {
+    return c.json(targetEmployees.map(e => ({ employeeId: e.id, score: null, weightRatedPct: 0, category: null })));
+  }
+
+  const allGoals = await db.select().from(kraGoals).where(eq(kraGoals.cycleId, cycleId)).all();
+  const allRatings = await db.select().from(kraRatings).all();
+  const ratingsByGoalId = new Map(allRatings.map((r) => [r.goalId, r]));
+  
+  const result = targetEmployees.map((emp) => {
+    const cycleGoals = allGoals.filter(g => g.employeeId === emp.id);
+    const score = computeKraScore(cycleGoals, ratingsByGoalId);
+    return { employeeId: emp.id, ...score };
+  });
+
+  return c.json(result);
 });
 
 async function upsertRating(db: ReturnType<typeof getDb>, goalId: number, patch: Partial<typeof kraRatings.$inferInsert>) {
