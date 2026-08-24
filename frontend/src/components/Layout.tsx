@@ -19,6 +19,7 @@ export function Layout() {
   const items: NavItem[] = [
     { to: "/", label: "Dashboard", icon: "dashboard", show: true },
     { to: "/employees", label: "Employees", icon: "employees", show: true },
+    { to: "/org-chart", label: "Org Chart", icon: "employees", show: true },
     { to: "/attendance", label: "Attendance", icon: "attendance", show: true },
     { to: "/exceptions", label: "Exceptions", icon: "exceptions", show: can("attendance.approve_team") },
     { to: "/leave", label: "Leave", icon: "leave", show: true },

@@ -18,6 +18,7 @@ import { Exit } from "./pages/Exit";
 import { Access } from "./pages/Access";
 import { Profile } from "./pages/Profile";
 import { RetailerVisits } from "./pages/RetailerVisits";
+import { OrgChart } from "./pages/OrgChart";
 
 function ProtectedLayout() {
   const { session, loading } = useAuth();
@@ -47,6 +48,7 @@ export default function App() {
         <Route path="/access" element={<Access />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/retailer-visits" element={<RetailerVisits />} />
+        <Route path="/org-chart" element={<OrgChart />} />
       </Route>
     </Routes>
   );

@@ -259,5 +259,119 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
   .sidebar { display: none; }
   .sidebar.open { display: flex; position: fixed; z-index: 50; box-shadow: var(--shadow-md); }
   .topbar { display: flex; }
-  .content { padding: 20px 16px; }
 }
+
+/* Org Chart */
+.org-chart-container {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 20px;
+}
+.org-tree-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  padding: 20px 5px 0 5px;
+}
+/* Connecting lines */
+.org-tree-node::before, .org-tree-node::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 50%;
+  border-top: 1px solid var(--border-strong);
+  width: 50%;
+  height: 20px;
+}
+.org-tree-node::after {
+  right: auto;
+  left: 50%;
+  border-left: 1px solid var(--border-strong);
+}
+/* Remove line for only child */
+.org-tree-node:only-child::after, .org-tree-node:only-child::before {
+  display: none;
+}
+/* Remove left/right line for first/last children */
+.org-tree-node:first-child::before, .org-tree-node:last-child::after {
+  border: 0 none;
+}
+/* Add back vertical line for first/last nodes */
+.org-tree-node:first-child::after {
+  border-radius: 5px 0 0 0;
+}
+.org-tree-node:last-child::before {
+  border-right: 1px solid var(--border-strong);
+  border-radius: 0 5px 0 0;
+}
+/* Downward line from parent */
+.org-tree-children {
+  display: flex;
+  justify-content: center;
+  padding-top: 20px;
+  position: relative;
+}
+.org-tree-children::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  border-left: 1px solid var(--border-strong);
+  width: 0;
+  height: 20px;
+}
+.org-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  text-align: center;
+  min-width: 140px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  z-index: 1;
+}
+.org-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-strong);
+}
+.org-card .avatar-chip {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--fill);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 11px;
+}
+.org-card .name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.org-card .role {
+  font-size: 11px;
+  color: var(--muted);
+}
+.org-card .dept {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fill);
+  margin-top: 2px;
+  background: var(--fill-soft);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
