@@ -75,13 +75,21 @@ app.post("/import/preview", async (c) => {
     .returning()
     .get();
 
+  // Check all hashes at once instead of per-row
+  const rowHashes = rows.map((row) => computeRowHash(deviceCode, row));
+  const existingHashes = new Set(
+    (await db.select({ rowHash: biometricImportRows.rowHash }).from(biometricImportRows).where(inArray(biometricImportRows.rowHash, rowHashes)).all()).map((r) => r.rowHash),
+  );
+
+  const insertValues = [];
   let imported = 0;
   let duplicates = 0;
   let unknown = 0;
 
-  for (const row of rows) {
-    const rowHash = computeRowHash(deviceCode, row);
-    const isDuplicate = await db.select().from(biometricImportRows).where(eq(biometricImportRows.rowHash, rowHash)).get();
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowHash = rowHashes[i];
+    const isDuplicate = existingHashes.has(rowHash);
 
     let resolvedEmployeeId =
       mapByCode.get(row.deviceUserCode) ??
@@ -100,7 +108,7 @@ app.post("/import/preview", async (c) => {
       imported++;
     }
 
-    await db.insert(biometricImportRows).values({
+    insertValues.push({
       batchId: batch.id,
       rowHash,
       deviceCode,
@@ -110,7 +118,12 @@ app.post("/import/preview", async (c) => {
       inOut: row.inOut,
       resolvedEmployeeId,
       status,
-    }).run();
+    });
+  }
+
+  // Batch insert all rows at once
+  if (insertValues.length > 0) {
+    await db.insert(biometricImportRows).values(insertValues).run();
   }
 
   await db
