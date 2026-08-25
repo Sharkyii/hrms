@@ -121,9 +121,13 @@ app.post("/import/preview", async (c) => {
     });
   }
 
-  // Batch insert all rows at once
+  // Batch insert in chunks to avoid SQLite variable limit (~32k variables / 8 columns per row)
   if (insertValues.length > 0) {
-    await db.insert(biometricImportRows).values(insertValues).run();
+    const chunkSize = 1000;
+    for (let i = 0; i < insertValues.length; i += chunkSize) {
+      const chunk = insertValues.slice(i, i + chunkSize);
+      await db.insert(biometricImportRows).values(chunk).run();
+    }
   }
 
   await db
