@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
-import { Badge } from "../components/Badge";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
 import type { Employee } from "../auth";

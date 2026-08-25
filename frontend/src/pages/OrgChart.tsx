@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { Employee } from "../auth";
 import { Spinner } from "../components/Spinner";
-import { Badge } from "../components/Badge";
 import { initials } from "../initials";
 
 interface OrgNode extends Employee {

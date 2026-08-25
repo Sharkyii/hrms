@@ -75,11 +75,15 @@ app.post("/import/preview", async (c) => {
     .returning()
     .get();
 
-  // Check all hashes at once instead of per-row
+  // Check hashes in chunks to avoid SQLite variable limit (~32k variables per query)
   const rowHashes = rows.map((row) => computeRowHash(deviceCode, row));
-  const existingHashes = new Set(
-    (await db.select({ rowHash: biometricImportRows.rowHash }).from(biometricImportRows).where(inArray(biometricImportRows.rowHash, rowHashes)).all()).map((r) => r.rowHash),
-  );
+  const existingHashes = new Set<string>();
+  const hashChunkSize = 500;
+  for (let i = 0; i < rowHashes.length; i += hashChunkSize) {
+    const chunk = rowHashes.slice(i, i + hashChunkSize);
+    const found = await db.select({ rowHash: biometricImportRows.rowHash }).from(biometricImportRows).where(inArray(biometricImportRows.rowHash, chunk)).all();
+    for (const r of found) existingHashes.add(r.rowHash);
+  }
 
   const insertValues = [];
   let imported = 0;
