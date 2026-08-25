@@ -135,37 +135,50 @@ export function Biometric() {
         <button className="btn" onClick={uploadPreview} disabled={busy}>{busy ? "Uploading..." : "Preview"}</button>
       </div>
 
-      {preview && (
-        <div className="card">
-          <h2>Preview — batch #{preview.batchId}</h2>
-          <p>
-            Total {preview.summary.total} · Ready {preview.summary.ready} · Duplicates {preview.summary.duplicates} · Unknown{" "}
-            {preview.summary.unknown}
-          </p>
-          <table>
-            <thead><tr><th>User code</th><th>Time</th><th>In/Out</th><th>Status</th><th>Resolve</th></tr></thead>
-            <tbody>
-              {preview.rows.map((r) => (
-                <tr key={r.id}>
-                  <td>{r.deviceUserCode}</td>
-                  <td>{new Date(r.punchDatetime).toLocaleString()}</td>
-                  <td>{r.inOut}</td>
-                  <td><Badge value={r.status} /></td>
-                  <td>
-                    {r.status === "unknown_id" && (
-                      <select defaultValue="" onChange={(e) => e.target.value && mapRow(r.deviceUserCode, Number(e.target.value))}>
-                        <option value="">Assign employee...</option>
-                        {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName} ({e.employeeCode})</option>)}
-                      </select>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <button className="btn" style={{ marginTop: 12 }} onClick={confirmImport}>Confirm import</button>
-        </div>
-      )}
+      {preview && (() => {
+        const grouped = preview.rows.reduce<Record<string, { ready: number; duplicates: number; unknown: number; hasUnknownId: boolean }>>((acc, r) => {
+          if (!acc[r.deviceUserCode]) acc[r.deviceUserCode] = { ready: 0, duplicates: 0, unknown: 0, hasUnknownId: false };
+          if (r.status === "ready") acc[r.deviceUserCode].ready++;
+          else if (r.status === "duplicate") acc[r.deviceUserCode].duplicates++;
+          else if (r.status === "unknown_id") {
+            acc[r.deviceUserCode].unknown++;
+            acc[r.deviceUserCode].hasUnknownId = true;
+          }
+          return acc;
+        }, {});
+
+        return (
+          <div className="card">
+            <h2>Preview — batch #{preview.batchId}</h2>
+            <p>
+              Total {preview.summary.total} · Ready {preview.summary.ready} · Duplicates {preview.summary.duplicates} · Unknown{" "}
+              {preview.summary.unknown}
+            </p>
+            <table>
+              <thead><tr><th>User code</th><th>Ready</th><th>Duplicates</th><th>Unknown</th><th>Resolve</th></tr></thead>
+              <tbody>
+                {Object.entries(grouped).map(([userCode, stats]) => (
+                  <tr key={userCode}>
+                    <td>{userCode}</td>
+                    <td>{stats.ready}</td>
+                    <td>{stats.duplicates}</td>
+                    <td>{stats.unknown}</td>
+                    <td>
+                      {stats.hasUnknownId && (
+                        <select defaultValue="" onChange={(e) => e.target.value && mapRow(userCode, Number(e.target.value))}>
+                          <option value="">Assign employee...</option>
+                          {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName} ({e.employeeCode})</option>)}
+                        </select>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button className="btn" style={{ marginTop: 12 }} onClick={confirmImport}>Confirm import</button>
+          </div>
+        );
+      })()}
     </div>
   );
 }
