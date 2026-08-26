@@ -39,24 +39,41 @@ function buildTree(employees: Employee[]): OrgNode[] {
   return roots;
 }
 
-// Calculate node positions for tree layout
-function calculatePositions(nodes: OrgNode[], x = 0, y = 0, xGap = 200, yGap = 150): Map<number, NodePosition> {
+// Calculate node positions for tree layout with better spacing
+function calculatePositions(nodes: OrgNode[], x = 50, y = 50, xGap = 280, yGap = 180): Map<number, NodePosition> {
   const positions = new Map<number, NodePosition>();
+  const cardWidth = 160;
 
-  function traverse(node: OrgNode, x: number, y: number, xGap: number) {
-    positions.set(node.id, { x, y });
+  function getTreeWidth(node: OrgNode, xGap: number): number {
+    if (node.children.length === 0) return cardWidth;
+    const childrenWidth = node.children.reduce((sum, child) => sum + getTreeWidth(child, xGap * 0.85), 0);
+    return Math.max(cardWidth, childrenWidth + (node.children.length - 1) * (xGap * 0.3));
+  }
+
+  function traverse(node: OrgNode, centerX: number, y: number, xGap: number) {
+    positions.set(node.id, { x: centerX - cardWidth / 2, y });
 
     if (node.children.length > 0) {
-      const childWidth = xGap * node.children.length;
-      const startX = x - childWidth / 2 + xGap / 2;
-      node.children.forEach((child, i) => {
-        traverse(child, startX + i * xGap, y + yGap, xGap * 0.8);
+      const totalChildWidth = node.children.reduce((sum, child) => sum + getTreeWidth(child, xGap * 0.85), 0);
+      const spacing = xGap * 0.4;
+      const totalSpacing = spacing * (node.children.length - 1);
+      const totalWidth = totalChildWidth + totalSpacing;
+      const startX = centerX - totalWidth / 2;
+
+      let currentX = startX;
+      node.children.forEach((child) => {
+        const childTreeWidth = getTreeWidth(child, xGap * 0.85);
+        const childCenterX = currentX + childTreeWidth / 2;
+        traverse(child, childCenterX, y + yGap, xGap * 0.85);
+        currentX += childTreeWidth + spacing;
       });
     }
   }
 
   nodes.forEach((root, i) => {
-    traverse(root, x + i * 400, y, xGap);
+    const rootTreeWidth = getTreeWidth(root, xGap);
+    const startX = x + i * (rootTreeWidth + 100);
+    traverse(root, startX + rootTreeWidth / 2, y, xGap);
   });
 
   return positions;
@@ -186,18 +203,52 @@ interface OrgCardProps {
   canRemove: boolean;
   onAdd: (managerId: number) => void;
   onRemove: (empId: number, empName: string) => void;
+  onDrag: (empId: number, newPos: NodePosition) => void;
+  customPositions?: Map<number, NodePosition>;
 }
 
-const OrgCard = ({ node, position, canAdd, canRemove, onAdd, onRemove }: OrgCardProps) => {
+const OrgCard = ({ node, position, canAdd, canRemove, onAdd, onRemove, onDrag, customPositions }: OrgCardProps) => {
+  const [isDraggingCard, setIsDraggingCard] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const actualPos = customPositions?.get(node.id) || position;
+
+  const handleCardMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    e.preventDefault();
+    setIsDraggingCard(true);
+    setDragOffset({
+      x: e.clientX - actualPos.x,
+      y: e.clientY - actualPos.y,
+    });
+  };
+
+  const handleCardMouseMove = (e: React.MouseEvent) => {
+    if (isDraggingCard) {
+      onDrag(node.id, {
+        x: e.clientX - dragOffset.x,
+        y: e.clientY - dragOffset.y,
+      });
+    }
+  };
+
+  const handleCardMouseUp = () => {
+    setIsDraggingCard(false);
+  };
+
   return (
     <div
       className="org-card-absolute"
       style={{
-        left: `${position.x}px`,
-        top: `${position.y}px`,
+        left: `${actualPos.x}px`,
+        top: `${actualPos.y}px`,
+        cursor: isDraggingCard ? "grabbing" : "grab",
       }}
+      onMouseDown={handleCardMouseDown}
+      onMouseMove={handleCardMouseMove}
+      onMouseUp={handleCardMouseUp}
+      onMouseLeave={handleCardMouseUp}
     >
-      <div className="org-card">
+      <div className="org-card" style={{ pointerEvents: "auto" }}>
         <div className="avatar-chip">{initials(node.fullName)}</div>
         <div className="info">
           <div className="name">{node.fullName}</div>
@@ -214,16 +265,35 @@ const OrgCard = ({ node, position, canAdd, canRemove, onAdd, onRemove }: OrgCard
 };
 
 // Render all nodes recursively
-function renderNodes(node: OrgNode, positions: Map<number, NodePosition>, canAdd: boolean, canRemove: boolean, onAdd: (id: number) => void, onRemove: (id: number, name: string) => void): React.ReactNode[] {
+function renderNodes(
+  node: OrgNode,
+  positions: Map<number, NodePosition>,
+  canAdd: boolean,
+  canRemove: boolean,
+  onAdd: (id: number) => void,
+  onRemove: (id: number, name: string) => void,
+  onDrag: (id: number, pos: NodePosition) => void,
+  customPositions?: Map<number, NodePosition>
+): React.ReactNode[] {
   const elements: React.ReactNode[] = [];
   const pos = positions.get(node.id);
   if (pos) {
     elements.push(
-      <OrgCard key={node.id} node={node} position={pos} canAdd={canAdd} canRemove={canRemove} onAdd={onAdd} onRemove={onRemove} />
+      <OrgCard
+        key={node.id}
+        node={node}
+        position={pos}
+        canAdd={canAdd}
+        canRemove={canRemove}
+        onAdd={onAdd}
+        onRemove={onRemove}
+        onDrag={onDrag}
+        customPositions={customPositions}
+      />
     );
   }
   node.children.forEach((child) => {
-    elements.push(...renderNodes(child, positions, canAdd, canRemove, onAdd, onRemove));
+    elements.push(...renderNodes(child, positions, canAdd, canRemove, onAdd, onRemove, onDrag, customPositions));
   });
   return elements;
 }
@@ -267,6 +337,7 @@ export function OrgChart() {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [customPositions, setCustomPositions] = useState<Map<number, NodePosition>>(new Map());
   const containerRef = useRef<HTMLDivElement>(null);
 
   const toast = useToast();
@@ -359,8 +430,16 @@ export function OrgChart() {
   const svgWidth = maxX - minX + 100;
   const svgHeight = maxY - minY + 100;
 
-  const nodes = tree.flatMap((root) => renderNodes(root, positions, canAdd, canRemove, handleAdd, handleRemove));
-  const connections = tree.flatMap((root) => renderConnections(root, positions));
+  const handleDrag = (empId: number, newPos: NodePosition) => {
+    const newCustomPositions = new Map(customPositions);
+    newCustomPositions.set(empId, newPos);
+    setCustomPositions(newCustomPositions);
+  };
+
+  const nodes = tree.flatMap((root) =>
+    renderNodes(root, positions, canAdd, canRemove, handleAdd, handleRemove, handleDrag, customPositions)
+  );
+  const connections = tree.flatMap((root) => renderConnections(root, customPositions.size > 0 ? customPositions : positions));
 
   return (
     <div>
@@ -373,6 +452,7 @@ export function OrgChart() {
               setSelectedDept(e.target.value || null);
               setZoom(1);
               setPan({ x: 0, y: 0 });
+              setCustomPositions(new Map());
             }}
             style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--border)", fontSize: "14px" }}
           >
@@ -381,7 +461,7 @@ export function OrgChart() {
               <option key={d} value={d}>{d}</option>
             ))}
           </select>
-          <button className="btn secondary" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>Reset View</button>
+          <button className="btn secondary" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); setCustomPositions(new Map()); }}>Reset</button>
           <span style={{ fontSize: "12px", color: "var(--muted)" }}>Zoom: {(zoom * 100).toFixed(0)}%</span>
           {canAdd && <button className="btn" onClick={() => setShowAddModal(null)}>
             <Icon name="add" /> Add Root

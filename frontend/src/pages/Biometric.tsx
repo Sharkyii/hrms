@@ -12,6 +12,7 @@ interface Device {
 interface ImportRow {
   id: number;
   deviceUserCode: string;
+  deviceEmployeeName: string | null;
   punchDatetime: string;
   inOut: string;
   resolvedEmployeeId: number | null;
@@ -22,6 +23,14 @@ interface PreviewResult {
   unmappedColumnCount: number;
   summary: { total: number; ready: number; duplicates: number; unknown: number };
   rows: ImportRow[];
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString([], { year: "numeric", month: "short", day: "2-digit" });
 }
 
 export function Biometric() {
@@ -36,6 +45,7 @@ export function Biometric() {
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [expandedUserCode, setExpandedUserCode] = useState<string | null>(null);
 
   useEffect(() => {
     api.get<Device[]>("/biometric/devices").then(setDevices);
@@ -156,22 +166,70 @@ export function Biometric() {
             <table>
               <thead><tr><th>User code</th><th>Ready</th><th>Duplicates</th><th>Unknown</th><th>Resolve</th></tr></thead>
               <tbody>
-                {Object.entries(grouped).map(([userCode, stats]) => (
-                  <tr key={userCode}>
-                    <td>{userCode}</td>
-                    <td>{stats.ready}</td>
-                    <td>{stats.duplicates}</td>
-                    <td>{stats.unknown}</td>
-                    <td>
-                      {stats.hasUnknownId && (
-                        <select defaultValue="" onChange={(e) => e.target.value && mapRow(userCode, Number(e.target.value))}>
-                          <option value="">Assign employee...</option>
-                          {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName} ({e.employeeCode})</option>)}
-                        </select>
+                {Object.entries(grouped).map(([userCode, stats]) => {
+                  const isExpanded = expandedUserCode === userCode;
+                  const userRows = preview.rows.filter((r) => r.deviceUserCode === userCode);
+                  const employeeName = userRows.find((r) => r.deviceEmployeeName)?.deviceEmployeeName;
+
+                  const byDate = userRows.reduce<Record<string, { in?: string; out?: string; status: string }[]>>((acc, r) => {
+                    const dateKey = r.punchDatetime.slice(0, 10);
+                    if (!acc[dateKey]) acc[dateKey] = [];
+                    acc[dateKey].push({ [r.inOut === "in" ? "in" : "out"]: r.punchDatetime, status: r.status } as { in?: string; out?: string; status: string });
+                    return acc;
+                  }, {});
+
+                  // Merge same-day in/out entries onto one line per punch-pair where possible.
+                  const dateRows = Object.entries(byDate)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([dateKey, entries]) => {
+                      const inTime = entries.find((e) => e.in)?.in;
+                      const outTime = entries.find((e) => e.out)?.out;
+                      const status = entries[0]?.status ?? "";
+                      return { dateKey, inTime, outTime, status };
+                    });
+
+                  return (
+                    <>
+                      <tr
+                        key={userCode}
+                        onClick={() => setExpandedUserCode(isExpanded ? null : userCode)}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <td>{isExpanded ? "▾" : "▸"} {userCode}{employeeName ? ` (${employeeName})` : ""}</td>
+                        <td>{stats.ready}</td>
+                        <td>{stats.duplicates}</td>
+                        <td>{stats.unknown}</td>
+                        <td onClick={(e) => e.stopPropagation()}>
+                          {stats.hasUnknownId && (
+                            <select defaultValue="" onChange={(e) => e.target.value && mapRow(userCode, Number(e.target.value))}>
+                              <option value="">Assign employee...</option>
+                              {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName} ({e.employeeCode})</option>)}
+                            </select>
+                          )}
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr key={`${userCode}-detail`}>
+                          <td colSpan={5} style={{ background: "var(--card-bg, #f7f7f7)", padding: 0 }}>
+                            <table style={{ width: "100%" }}>
+                              <thead><tr><th>Date</th><th>In time</th><th>Out time</th><th>Status</th></tr></thead>
+                              <tbody>
+                                {dateRows.map(({ dateKey, inTime, outTime, status }) => (
+                                  <tr key={dateKey}>
+                                    <td>{formatDate(dateKey)}</td>
+                                    <td>{inTime ? formatTime(inTime) : "—"}</td>
+                                    <td>{outTime ? formatTime(outTime) : "—"}</td>
+                                    <td>{status}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                  </tr>
-                ))}
+                    </>
+                  );
+                })}
               </tbody>
             </table>
             <button className="btn" style={{ marginTop: 12 }} onClick={confirmImport}>Confirm import</button>
