@@ -261,6 +261,7 @@ export function OrgChart() {
   const [loading, setLoading] = useState(true);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
+  const [selectedDept, setSelectedDept] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState<number | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -285,7 +286,12 @@ export function OrgChart() {
     load();
   }, []);
 
-  const tree = buildTree(employees);
+  // Filter employees by selected department
+  const filteredEmployees = selectedDept
+    ? employees.filter((e) => e.department === selectedDept)
+    : employees;
+
+  const tree = buildTree(filteredEmployees);
   const positions = calculatePositions(tree);
 
   async function handleAdd(managerId: number) {
@@ -359,9 +365,23 @@ export function OrgChart() {
   return (
     <div>
       <div className="page-header">
-        <h1>Organization Chart</h1>
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          <button className="btn secondary" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>Reset</button>
+        <h1>Organization Chart{selectedDept && ` — ${selectedDept}`}</h1>
+        <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+          <select
+            value={selectedDept || ""}
+            onChange={(e) => {
+              setSelectedDept(e.target.value || null);
+              setZoom(1);
+              setPan({ x: 0, y: 0 });
+            }}
+            style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--border)", fontSize: "14px" }}
+          >
+            <option value="">All Teams</option>
+            {departments.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+          <button className="btn secondary" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>Reset View</button>
           <span style={{ fontSize: "12px", color: "var(--muted)" }}>Zoom: {(zoom * 100).toFixed(0)}%</span>
           {canAdd && <button className="btn" onClick={() => setShowAddModal(null)}>
             <Icon name="add" /> Add Root

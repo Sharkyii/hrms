@@ -301,10 +301,7 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
 
 /* Interactive org chart canvas */
 .org-canvas {
-  background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
-}
-@media (prefers-color-scheme: dark) {
-  .org-canvas { background: linear-gradient(135deg, #1a1a1a 0%, #121212 100%); }
+  background: var(--bg);
 }
 
 /* Card positioned on canvas */

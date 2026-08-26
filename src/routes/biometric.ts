@@ -75,10 +75,11 @@ app.post("/import/preview", async (c) => {
     .returning()
     .get();
 
-  // Check hashes in chunks to avoid SQLite variable limit (~32k variables per query)
+  // Check hashes in chunks to avoid D1's bound-parameter limit (D1 caps this around 100 per
+  // statement — much lower than vanilla SQLite's ~32k default that earlier chunk sizes assumed).
   const rowHashes = rows.map((row) => computeRowHash(deviceCode, row));
   const existingHashes = new Set<string>();
-  const hashChunkSize = 500;
+  const hashChunkSize = 90;
   for (let i = 0; i < rowHashes.length; i += hashChunkSize) {
     const chunk = rowHashes.slice(i, i + hashChunkSize);
     const found = await db.select({ rowHash: biometricImportRows.rowHash }).from(biometricImportRows).where(inArray(biometricImportRows.rowHash, chunk)).all();
@@ -125,9 +126,9 @@ app.post("/import/preview", async (c) => {
     });
   }
 
-  // Batch insert in chunks to avoid SQLite variable limit (~32k variables / 8 columns per row)
+  // Batch insert in chunks to avoid D1's bound-parameter limit (~100 per statement; 8 columns/row)
   if (insertValues.length > 0) {
-    const chunkSize = 1000;
+    const chunkSize = 10;
     for (let i = 0; i < insertValues.length; i += chunkSize) {
       const chunk = insertValues.slice(i, i + chunkSize);
       await db.insert(biometricImportRows).values(chunk).run();
