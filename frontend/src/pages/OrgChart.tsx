@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { api, ApiError } from "../api";
 import type { Employee } from "../auth";
 import { Spinner } from "../components/Spinner";
@@ -10,6 +10,11 @@ import { useAuth } from "../auth";
 
 interface OrgNode extends Employee {
   children: OrgNode[];
+}
+
+interface NodePosition {
+  x: number;
+  y: number;
 }
 
 function buildTree(employees: Employee[]): OrgNode[] {
@@ -32,6 +37,29 @@ function buildTree(employees: Employee[]): OrgNode[] {
   });
 
   return roots;
+}
+
+// Calculate node positions for tree layout
+function calculatePositions(nodes: OrgNode[], x = 0, y = 0, xGap = 200, yGap = 150): Map<number, NodePosition> {
+  const positions = new Map<number, NodePosition>();
+
+  function traverse(node: OrgNode, x: number, y: number, xGap: number) {
+    positions.set(node.id, { x, y });
+
+    if (node.children.length > 0) {
+      const childWidth = xGap * node.children.length;
+      const startX = x - childWidth / 2 + xGap / 2;
+      node.children.forEach((child, i) => {
+        traverse(child, startX + i * xGap, y + yGap, xGap * 0.8);
+      });
+    }
+  }
+
+  nodes.forEach((root, i) => {
+    traverse(root, x + i * 400, y, xGap);
+  });
+
+  return positions;
 }
 
 interface AddEmployeeModalProps {
@@ -151,11 +179,24 @@ function AddEmployeeModal({ managerId, onClose, onSuccess, departments }: AddEmp
   );
 }
 
-const OrgTreeNode = ({ node, canAdd, canRemove, onRefresh, onRemove, departments }: { node: OrgNode; canAdd: boolean; canRemove: boolean; onRefresh: () => void; onRemove: (empId: number, empName: string) => void; departments: string[] }) => {
-  const [showAdd, setShowAdd] = useState(false);
+interface OrgCardProps {
+  node: OrgNode;
+  position: NodePosition;
+  canAdd: boolean;
+  canRemove: boolean;
+  onAdd: (managerId: number) => void;
+  onRemove: (empId: number, empName: string) => void;
+}
 
+const OrgCard = ({ node, position, canAdd, canRemove, onAdd, onRemove }: OrgCardProps) => {
   return (
-    <div className="org-tree-node">
+    <div
+      className="org-card-absolute"
+      style={{
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+      }}
+    >
       <div className="org-card">
         <div className="avatar-chip">{initials(node.fullName)}</div>
         <div className="info">
@@ -164,38 +205,69 @@ const OrgTreeNode = ({ node, canAdd, canRemove, onRefresh, onRemove, departments
           <div className="dept">{node.department || "General"}</div>
         </div>
         {(canAdd || canRemove) && <div className="org-actions">
-          {canAdd && <button title="Add report" onClick={() => setShowAdd(true)} className="icon-btn"><Icon name="add" /></button>}
+          {canAdd && <button title="Add report" onClick={() => onAdd(node.id)} className="icon-btn add"><Icon name="add" /></button>}
           {canRemove && <button title="Offboard" onClick={() => onRemove(node.id, node.fullName)} className="icon-btn danger"><Icon name="delete" /></button>}
         </div>}
       </div>
-      {showAdd && (
-        <AddEmployeeModal
-          managerId={node.id}
-          onClose={() => setShowAdd(false)}
-          onSuccess={() => {
-            setShowAdd(false);
-            onRefresh();
-          }}
-          departments={departments}
-        />
-      )}
-      {node.children.length > 0 && (
-        <div className="org-tree-children">
-          {node.children.map((child) => (
-            <OrgTreeNode key={child.id} node={child} canAdd={canAdd} canRemove={canRemove} onRefresh={onRefresh} onRemove={onRemove} departments={departments} />
-          ))}
-        </div>
-      )}
     </div>
   );
 };
+
+// Render all nodes recursively
+function renderNodes(node: OrgNode, positions: Map<number, NodePosition>, canAdd: boolean, canRemove: boolean, onAdd: (id: number) => void, onRemove: (id: number, name: string) => void): React.ReactNode[] {
+  const elements: React.ReactNode[] = [];
+  const pos = positions.get(node.id);
+  if (pos) {
+    elements.push(
+      <OrgCard key={node.id} node={node} position={pos} canAdd={canAdd} canRemove={canRemove} onAdd={onAdd} onRemove={onRemove} />
+    );
+  }
+  node.children.forEach((child) => {
+    elements.push(...renderNodes(child, positions, canAdd, canRemove, onAdd, onRemove));
+  });
+  return elements;
+}
+
+// Draw SVG lines connecting parent to children
+function renderConnections(node: OrgNode, positions: Map<number, NodePosition>): React.ReactNode[] {
+  const elements: React.ReactNode[] = [];
+  const parentPos = positions.get(node.id);
+
+  if (parentPos && node.children.length > 0) {
+    node.children.forEach((child) => {
+      const childPos = positions.get(child.id);
+      if (childPos) {
+        const parentCenterX = parentPos.x + 80;
+        const parentBottomY = parentPos.y + 110;
+        const childCenterX = childPos.x + 80;
+        const childTopY = childPos.y;
+
+        elements.push(
+          <line key={`line-${node.id}-${child.id}`} x1={parentCenterX} y1={parentBottomY} x2={childCenterX} y2={childTopY} className="org-connection" />
+        );
+      }
+    });
+  }
+
+  node.children.forEach((child) => {
+    elements.push(...renderConnections(child, positions));
+  });
+
+  return elements;
+}
 
 export function OrgChart() {
   const { can } = useAuth();
   const [loading, setLoading] = useState(true);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
-  const [showAddRoot, setShowAddRoot] = useState(false);
+  const [showAddModal, setShowAddModal] = useState<number | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+
   const toast = useToast();
   const confirm = useConfirm();
   const canAdd = can("employee.manage");
@@ -212,6 +284,13 @@ export function OrgChart() {
   useEffect(() => {
     load();
   }, []);
+
+  const tree = buildTree(employees);
+  const positions = calculatePositions(tree);
+
+  async function handleAdd(managerId: number) {
+    setShowAddModal(managerId);
+  }
 
   async function handleRemove(empId: number, empName: string) {
     const ok = await confirm({
@@ -234,46 +313,113 @@ export function OrgChart() {
     }
   }
 
-  const tree = buildTree(employees);
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const factor = e.deltaY > 0 ? 0.9 : 1.1;
+    setZoom((z) => Math.max(0.5, Math.min(2.5, z * factor)));
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 2 || e.ctrlKey) {
+      setIsDragging(true);
+      setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDragging) {
+      setPan({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y,
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
 
   if (loading) return <div style={{ padding: 40 }}><Spinner /></div>;
+
+  // Calculate bounding box for SVG
+  let minX = 0, maxX = 0, minY = 0, maxY = 0;
+  positions.forEach(({ x, y }) => {
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x + 160);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y + 110);
+  });
+
+  const svgWidth = maxX - minX + 100;
+  const svgHeight = maxY - minY + 100;
+
+  const nodes = tree.flatMap((root) => renderNodes(root, positions, canAdd, canRemove, handleAdd, handleRemove));
+  const connections = tree.flatMap((root) => renderConnections(root, positions));
 
   return (
     <div>
       <div className="page-header">
         <h1>Organization Chart</h1>
-        {canAdd && <button className="btn" onClick={() => setShowAddRoot(true)}>
-          <Icon name="add" /> Add Root Employee
-        </button>}
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <button className="btn secondary" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>Reset</button>
+          <span style={{ fontSize: "12px", color: "var(--muted)" }}>Zoom: {(zoom * 100).toFixed(0)}%</span>
+          {canAdd && <button className="btn" onClick={() => setShowAddModal(null)}>
+            <Icon name="add" /> Add Root
+          </button>}
+        </div>
       </div>
-      {showAddRoot && (
+
+      {showAddModal !== null && (
         <AddEmployeeModal
-          managerId={null}
-          onClose={() => setShowAddRoot(false)}
+          managerId={showAddModal === null ? null : showAddModal}
+          onClose={() => setShowAddModal(null)}
           onSuccess={() => {
-            setShowAddRoot(false);
+            setShowAddModal(null);
             load();
           }}
           departments={departments}
         />
       )}
-      <div className="card" style={{ overflowX: "auto", padding: "40px 20px" }}>
-        <div className="org-chart-container">
-          {tree.length === 0 ? (
-            <p className="empty">No employees in organization yet.</p>
-          ) : (
-            tree.map((root) => (
-              <OrgTreeNode
-                key={root.id}
-                node={root}
-                canAdd={canAdd}
-                canRemove={canRemove}
-                onRefresh={load}
-                onRemove={handleRemove}
-                departments={departments}
-              />
-            ))
-          )}
+
+      <div className="card" style={{ padding: 0, height: "600px", position: "relative", overflow: "hidden" }}>
+        <div
+          ref={containerRef}
+          className="org-canvas"
+          onWheel={handleWheel}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          style={{
+            width: "100%",
+            height: "100%",
+            overflow: "hidden",
+            cursor: isDragging ? "grabbing" : "grab",
+            position: "relative",
+          }}
+        >
+          <div
+            style={{
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transformOrigin: "top left",
+              position: "absolute",
+              left: 0,
+              top: 0,
+            }}
+          >
+            <svg
+              width={svgWidth}
+              height={svgHeight}
+              style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }}
+            >
+              {connections}
+            </svg>
+            {nodes.map((node) => node)}
+          </div>
+
+          <div style={{ position: "absolute", bottom: "10px", left: "10px", fontSize: "11px", color: "var(--muted)", pointerEvents: "none" }}>
+            Scroll to zoom • Ctrl+Drag to pan
+          </div>
         </div>
       </div>
     </div>
