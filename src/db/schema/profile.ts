@@ -41,6 +41,8 @@ export const employeeDocumentTypeValues = [
   "previous_relieving_letter",
   "previous_increment_letter",
   "previous_salary_slip",
+  "relieving_letter",
+  "experience_certificate",
 ] as const;
 
 // Metadata row per uploaded file — the file bytes live in R2, keyed by r2Key.

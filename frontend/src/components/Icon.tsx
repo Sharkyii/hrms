@@ -15,6 +15,8 @@ const paths: Record<string, string> = {
   logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
   search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35",
   close: "M18 6L6 18M6 6l12 12",
+  add: "M12 5v14M5 12h14",
+  delete: "M4 7h16M10 11v6m4-6v6M9 7l1-3h4l1 3m-9 0 1 14h10l1-14",
   download: "M12 3v12m0 0l-4-4m4 4l4-4M4 21h16",
   menu: "M3 6h18M3 12h18M3 18h18",
 };

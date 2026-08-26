@@ -375,3 +375,15 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
   border-radius: 4px;
 }
 
+.org-actions { display: flex; gap: 8px; margin-left: auto; }
+.icon-btn { background: none; border: none; cursor: pointer; padding: 4px 8px; border-radius: 4px; display: flex; align-items: center; color: #666; transition: background .2s; }
+.icon-btn:hover { background: #f0f0f0; }
+.icon-btn.danger { color: #d32f2f; }
+.icon-btn.danger:hover { background: #ffebee; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal { background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, .15); width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px; border-bottom: 1px solid #eee; }
+.modal-header h2 { margin: 0; }
+.close { background: none; border: none; font-size: 24px; cursor: pointer; color: #999; }
+.modal-body { padding: 20px; }
+.modal-footer { display: flex; gap: 10px; justify-content: flex-end; padding: 20px; border-top: 1px solid #eee; }

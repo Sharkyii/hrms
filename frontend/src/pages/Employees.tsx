@@ -139,7 +139,7 @@ export function Employees() {
                 <div className="meta">
                   {e.kraScore !== null && e.kraScore !== undefined && (
                     <div className="col">
-                      <div className="k">KRA Score</div>
+                      <div className="k">Performance Score</div>
                       <div className="v">{e.kraScore.toFixed(2)} / 5</div>
                     </div>
                   )}

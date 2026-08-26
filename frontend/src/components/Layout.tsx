@@ -25,7 +25,7 @@ export function Layout() {
     { to: "/leave", label: "Leave", icon: "leave", show: true },
     { to: "/biometric", label: "Biometric Import", icon: "biometric", show: can("biometric.import") },
     { to: "/payroll", label: "Payroll", icon: "payroll", show: true },
-    { to: "/kra", label: "KRA", icon: "kra", show: true },
+    { to: "/kra", label: "Performance", icon: "kra", show: true },
     { to: "/assets", label: "Assets", icon: "assets", show: true },
     { to: "/policies", label: "Policies", icon: "policies", show: true },
     { to: "/queries", label: "Queries", icon: "queries", show: true },

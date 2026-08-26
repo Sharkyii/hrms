@@ -112,7 +112,7 @@ export function Kra() {
 
   return (
     <div>
-      <div className="page-header"><h1>KRA</h1></div>
+      <div className="page-header"><h1>Performance</h1></div>
 
       {can("kra.view_all") && (
         <div className="card">
@@ -190,7 +190,7 @@ export function Kra() {
 
       {canManageTeam && (
         <div className="card">
-          <h2>Team KRA Scores</h2>
+          <h2>Team Performance Scores</h2>
           {teamScores.length === 0 ? (
             <p className="empty">No team scores available.</p>
           ) : (

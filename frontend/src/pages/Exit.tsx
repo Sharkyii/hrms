@@ -5,9 +5,12 @@ import { Badge } from "../components/Badge";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
 import { initials } from "../initials";
+import { Icon } from "../components/Icon";
 import type { Employee } from "../auth";
 
 interface ExitRequest { id: number; employeeId: number; resignationDate: string; lastWorkingDay: string; status: string }
+interface ExitLetter { id: number; docType: string; fileName: string; downloadUrl: string }
+interface SettlementResponse { settlement: { id: number }; letters: ExitLetter[] }
 
 export function Exit() {
   const { can } = useAuth();
@@ -17,6 +20,7 @@ export function Exit() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [form, setForm] = useState({ resignationDate: "", lastWorkingDay: "", reason: "" });
   const [settlement, setSettlement] = useState<Record<number, { dues: string; deductions: string }>>({});
+  const [letters, setLetters] = useState<Record<number, ExitLetter[]>>({});
 
   const canManage = can("exit.manage");
   const empName = (id: number) => employees.find((e) => e.id === id)?.fullName ?? `#${id}`;
@@ -45,16 +49,34 @@ export function Exit() {
   }
 
   async function settle(id: number) {
-    const s = settlement[id] ?? { dues: "0", deductions: "0" };
+    const s = settlement[id] ?? { dues: "", deductions: "" };
+    const dues = s.dues.trim() === "" ? undefined : Number(s.dues);
+    const deductions = s.deductions.trim() === "" ? 0 : Number(s.deductions);
+    if ((dues !== undefined && !Number.isFinite(dues)) || !Number.isFinite(deductions)) {
+      toast.error("Enter valid settlement amounts.");
+      return;
+    }
     const ok = await confirm({
       title: "Settle and mark exited",
-      message: `Net settlement will be ${(Number(s.dues) - Number(s.deductions)).toFixed(2)}. This marks the employee as exited. This cannot be undone.`,
+      message: dues === undefined
+        ? `The latest payslip's net pay will be used as dues, less ${deductions.toFixed(2)} in deductions. This marks the employee as exited. This cannot be undone.`
+        : `Net settlement will be ${(dues - deductions).toFixed(2)}. This marks the employee as exited. This cannot be undone.`,
       confirmLabel: "Settle",
     });
     if (!ok) return;
-    await api.post(`/exit/requests/${id}/settlement`, { dues: Number(s.dues), deductions: Number(s.deductions) });
-    toast.success("Settlement processed.");
+    const result = await api.post<SettlementResponse>(`/exit/requests/${id}/settlement`, { ...(dues === undefined ? {} : { dues }), deductions });
+    setLetters((current) => ({ ...current, [id]: result.letters }));
+    toast.success("Settlement processed and exit letters created.");
     await load();
+  }
+
+  async function loadLetters(id: number) {
+    try {
+      const requestLetters = await api.get<ExitLetter[]>(`/exit/requests/${id}/letters`);
+      setLetters((current) => ({ ...current, [id]: requestLetters }));
+    } catch {
+      toast.error("Unable to load exit letters.");
+    }
   }
 
   return (
@@ -91,13 +113,20 @@ export function Exit() {
                       {r.status === "pending" && <button className="btn secondary" onClick={() => startClearance(r.id)}>Start clearance</button>}
                       {r.status === "in_clearance" && (
                         <>
-                          <input placeholder="Dues" style={{ width: 80 }}
-                            onChange={(e) => setSettlement({ ...settlement, [r.id]: { ...(settlement[r.id] ?? { dues: "0", deductions: "0" }), dues: e.target.value } })} />
-                          <input placeholder="Deductions" style={{ width: 90 }}
-                            onChange={(e) => setSettlement({ ...settlement, [r.id]: { ...(settlement[r.id] ?? { dues: "0", deductions: "0" }), deductions: e.target.value } })} />
+                          <input type="number" min="0" step="0.01" placeholder="Dues (latest payslip)" style={{ width: 145 }} value={settlement[r.id]?.dues ?? ""}
+                            onChange={(e) => setSettlement({ ...settlement, [r.id]: { ...(settlement[r.id] ?? { dues: "", deductions: "" }), dues: e.target.value } })} />
+                          <input type="number" min="0" step="0.01" placeholder="Deductions" style={{ width: 90 }} value={settlement[r.id]?.deductions ?? ""}
+                            onChange={(e) => setSettlement({ ...settlement, [r.id]: { ...(settlement[r.id] ?? { dues: "", deductions: "" }), deductions: e.target.value } })} />
                           <button className="btn" onClick={() => settle(r.id)}>Settle</button>
                         </>
                       )}
+                    </div>
+                  )}
+                  {r.status === "settled" && (
+                    <div className="actions">
+                      {letters[r.id]?.length ? letters[r.id].map((letter) => (
+                        <a className="btn secondary" key={letter.id} href={letter.downloadUrl} target="_blank" rel="noreferrer"><Icon name="download" /> {letter.docType === "relieving_letter" ? "Relieving Letter" : "Experience Certificate"}</a>
+                      )) : <button className="btn secondary" onClick={() => loadLetters(r.id)}><Icon name="download" /> Download Letters</button>}
                     </div>
                   )}
                 </div>

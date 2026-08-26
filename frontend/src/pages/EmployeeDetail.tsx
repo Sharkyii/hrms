@@ -628,7 +628,7 @@ export function EmployeeDetail() {
 
       <div className="card">
         <h2>
-          KRA — {profile.kra.cycleName ?? "no open cycle"}
+          Performance — {profile.kra.cycleName ?? "no open cycle"}
           {profile.kra.category && <Badge value={profile.kra.category} />}
         </h2>
         {profile.kra.score !== null && (

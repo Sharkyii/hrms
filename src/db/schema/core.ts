@@ -26,7 +26,9 @@ export const employees = sqliteTable("employees", {
   dateOfJoining: text("date_of_joining").notNull(),
   // Defaults to 3 months after joining but is editable — probation can be extended per the handbook.
   confirmationDate: text("confirmation_date"),
-  status: text("status", { enum: ["active", "exited"] }).notNull().default("active"),
+  // "offboarding" removes a person from active workflows while their clearance and
+  // final settlement are still in progress.
+  status: text("status", { enum: ["active", "offboarding", "exited"] }).notNull().default("active"),
   createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
   updatedAt: text("updated_at").notNull().default(sql`(current_timestamp)`),
 });
