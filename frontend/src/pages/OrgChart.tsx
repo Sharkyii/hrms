@@ -299,13 +299,19 @@ function renderNodes(
 }
 
 // Draw SVG lines connecting parent to children
-function renderConnections(node: OrgNode, positions: Map<number, NodePosition>): React.ReactNode[] {
+function renderConnections(
+  node: OrgNode,
+  positions: Map<number, NodePosition>,
+  customPositions?: Map<number, NodePosition>
+): React.ReactNode[] {
   const elements: React.ReactNode[] = [];
-  const parentPos = positions.get(node.id);
+
+  // Use custom position if available, otherwise use calculated position
+  const parentPos = customPositions?.get(node.id) || positions.get(node.id);
 
   if (parentPos && node.children.length > 0) {
     node.children.forEach((child) => {
-      const childPos = positions.get(child.id);
+      const childPos = customPositions?.get(child.id) || positions.get(child.id);
       if (childPos) {
         const parentCenterX = parentPos.x + 80;
         const parentBottomY = parentPos.y + 110;
@@ -320,7 +326,7 @@ function renderConnections(node: OrgNode, positions: Map<number, NodePosition>):
   }
 
   node.children.forEach((child) => {
-    elements.push(...renderConnections(child, positions));
+    elements.push(...renderConnections(child, positions, customPositions));
   });
 
   return elements;
@@ -439,7 +445,7 @@ export function OrgChart() {
   const nodes = tree.flatMap((root) =>
     renderNodes(root, positions, canAdd, canRemove, handleAdd, handleRemove, handleDrag, customPositions)
   );
-  const connections = tree.flatMap((root) => renderConnections(root, customPositions.size > 0 ? customPositions : positions));
+  const connections = tree.flatMap((root) => renderConnections(root, positions, customPositions.size > 0 ? customPositions : undefined));
 
   return (
     <div>
