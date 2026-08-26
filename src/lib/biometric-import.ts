@@ -217,7 +217,12 @@ function parseGenericSheet(sheet: XLSX.WorkSheet): { rows: RawPunchRow[]; unmapp
 }
 
 export async function parseBiometricWorkbook(buffer: ArrayBuffer): Promise<ParsedFile> {
-  const workbook = XLSX.read(buffer, { type: "array" });
+  let workbook: XLSX.WorkBook;
+  try {
+    workbook = XLSX.read(buffer, { type: "array" });
+  } catch (err) {
+    throw new BiometricParseError("Could not read file — ensure it's a valid Excel file (.xlsx or .xls)", []);
+  }
   if (workbook.SheetNames.length === 0) throw new BiometricParseError("The file has no readable sheet.", []);
 
   const exceptionSheetName = workbook.SheetNames.find((name) => /exception/i.test(name) && /stat/i.test(name));

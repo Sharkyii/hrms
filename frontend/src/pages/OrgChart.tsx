@@ -165,7 +165,7 @@ const OrgTreeNode = ({ node, canAdd, canRemove, onRefresh, onRemove, departments
         </div>
         {(canAdd || canRemove) && <div className="org-actions">
           {canAdd && <button title="Add report" onClick={() => setShowAdd(true)} className="icon-btn"><Icon name="add" /></button>}
-          {canRemove && <button title="Remove/Offboard" onClick={() => onRemove(node.id, node.fullName)} className="icon-btn danger"><Icon name="delete" /></button>}
+          {canRemove && <button title="Offboard" onClick={() => onRemove(node.id, node.fullName)} className="icon-btn danger"><Icon name="delete" /></button>}
         </div>}
       </div>
       {showAdd && (
