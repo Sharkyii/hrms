@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { useToast } from "../components/Toast";
 import { useConfirm } from "../components/ConfirmDialog";
-import type { Employee } from "../auth";
+import { Badge } from "../components/Badge";
 
 interface Device {
   id: number;
@@ -37,7 +37,6 @@ export function Biometric() {
   const toast = useToast();
   const confirmDialog = useConfirm();
   const [devices, setDevices] = useState<Device[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
   const [deviceCode, setDeviceCode] = useState("");
   const [newDeviceCode, setNewDeviceCode] = useState("");
   const [newDeviceLocation, setNewDeviceLocation] = useState("");
@@ -49,7 +48,6 @@ export function Biometric() {
 
   useEffect(() => {
     api.get<Device[]>("/biometric/devices").then(setDevices);
-    api.get<Employee[]>("/employees").then(setEmployees);
   }, []);
 
   async function registerDevice() {
@@ -78,14 +76,6 @@ export function Biometric() {
     } finally {
       setBusy(false);
     }
-  }
-
-  async function mapRow(deviceUserCode: string, employeeId: number) {
-    if (!preview) return;
-    await api.post(`/biometric/import/${preview.batchId}/map`, { deviceUserCode, employeeId });
-    const rows = preview.rows.map((r) => (r.deviceUserCode === deviceUserCode ? { ...r, resolvedEmployeeId: employeeId, status: "ready" } : r));
-    setPreview({ ...preview, rows });
-    toast.success(`Mapped ${deviceUserCode}.`);
   }
 
   async function confirmImport() {
@@ -145,26 +135,37 @@ export function Biometric() {
       </div>
 
       {preview && (() => {
-        const grouped = preview.rows.reduce<Record<string, { ready: number; duplicates: number; unknown: number; hasUnknownId: boolean }>>((acc, r) => {
-          if (!acc[r.deviceUserCode]) acc[r.deviceUserCode] = { ready: 0, duplicates: 0, unknown: 0, hasUnknownId: false };
+        const grouped = preview.rows.reduce<Record<string, { ready: number; duplicates: number; unknown: number }>>((acc, r) => {
+          if (!acc[r.deviceUserCode]) acc[r.deviceUserCode] = { ready: 0, duplicates: 0, unknown: 0 };
           if (r.status === "ready") acc[r.deviceUserCode].ready++;
           else if (r.status === "duplicate") acc[r.deviceUserCode].duplicates++;
-          else if (r.status === "unknown_id") {
-            acc[r.deviceUserCode].unknown++;
-            acc[r.deviceUserCode].hasUnknownId = true;
-          }
+          else if (r.status === "unknown_id") acc[r.deviceUserCode].unknown++;
           return acc;
         }, {});
 
         return (
           <div className="card">
             <h2>Preview — batch #{preview.batchId}</h2>
-            <p>
-              Total {preview.summary.total} · Ready {preview.summary.ready} · Duplicates {preview.summary.duplicates} · Unknown{" "}
-              {preview.summary.unknown}
-            </p>
+            <div className="stat-grid" style={{ marginBottom: 16 }}>
+              <div className="stat">
+                <div className="value">{preview.summary.total}</div>
+                <div className="label">Total rows</div>
+              </div>
+              <div className="stat">
+                <div className="value" style={{ color: "var(--success)" }}>{preview.summary.ready}</div>
+                <div className="label">Ready</div>
+              </div>
+              <div className={`stat ${preview.summary.duplicates > 0 ? "warn" : ""}`}>
+                <div className="value">{preview.summary.duplicates}</div>
+                <div className="label">Duplicates</div>
+              </div>
+              <div className={`stat ${preview.summary.unknown > 0 ? "critical" : ""}`}>
+                <div className="value" style={preview.summary.unknown > 0 ? { color: "var(--critical)" } : undefined}>{preview.summary.unknown}</div>
+                <div className="label">Unknown</div>
+              </div>
+            </div>
             <table>
-              <thead><tr><th>User code</th><th>Ready</th><th>Duplicates</th><th>Unknown</th><th>Resolve</th></tr></thead>
+              <thead><tr><th>User code</th><th>Ready</th><th>Duplicates</th><th>Unknown</th></tr></thead>
               <tbody>
                 {Object.entries(grouped).map(([userCode, stats]) => {
                   const isExpanded = expandedUserCode === userCode;
@@ -196,21 +197,13 @@ export function Biometric() {
                         style={{ cursor: "pointer" }}
                       >
                         <td>{isExpanded ? "▾" : "▸"} {userCode}{employeeName ? ` (${employeeName})` : ""}</td>
-                        <td>{stats.ready}</td>
-                        <td>{stats.duplicates}</td>
-                        <td>{stats.unknown}</td>
-                        <td onClick={(e) => e.stopPropagation()}>
-                          {stats.hasUnknownId && (
-                            <select defaultValue="" onChange={(e) => e.target.value && mapRow(userCode, Number(e.target.value))}>
-                              <option value="">Assign employee...</option>
-                              {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName} ({e.employeeCode})</option>)}
-                            </select>
-                          )}
-                        </td>
+                        <td style={{ color: stats.ready > 0 ? "var(--success)" : undefined, fontWeight: stats.ready > 0 ? 700 : undefined }}>{stats.ready}</td>
+                        <td style={{ color: stats.duplicates > 0 ? "var(--warning)" : undefined, fontWeight: stats.duplicates > 0 ? 700 : undefined }}>{stats.duplicates}</td>
+                        <td style={{ color: stats.unknown > 0 ? "var(--critical)" : undefined, fontWeight: stats.unknown > 0 ? 700 : undefined }}>{stats.unknown}</td>
                       </tr>
                       {isExpanded && (
                         <tr key={`${userCode}-detail`}>
-                          <td colSpan={5} style={{ background: "var(--card-bg, #f7f7f7)", padding: 0 }}>
+                          <td colSpan={4} style={{ background: "var(--card-bg, #f7f7f7)", padding: 0 }}>
                             <table style={{ width: "100%" }}>
                               <thead><tr><th>Date</th><th>In time</th><th>Out time</th><th>Status</th></tr></thead>
                               <tbody>
@@ -219,7 +212,7 @@ export function Biometric() {
                                     <td>{formatDate(dateKey)}</td>
                                     <td>{inTime ? formatTime(inTime) : "—"}</td>
                                     <td>{outTime ? formatTime(outTime) : "—"}</td>
-                                    <td>{status}</td>
+                                    <td><Badge value={status} /></td>
                                   </tr>
                                 ))}
                               </tbody>

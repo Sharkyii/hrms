@@ -17,6 +17,35 @@ export const kraGoals = sqliteTable("kra_goals", {
   title: text("title").notNull(),
   weightPct: real("weight_pct").notNull(),
   target: text("target"),
+  // Optional numeric Target-vs-Achieved tracking, alongside the free-text `target` hint above and
+  // the subjective 1-5 rating in kraRatings. When targetValue is set, computeKpiScore derives a 0-100
+  // score from targetValue/achievedValue instead of relying on a manually-typed rating — e.g. "Number
+  // of Influencer Collaborations Completed: 4/month". Both scoring paths coexist; a goal uses whichever
+  // it has data for.
+  targetValue: real("target_value"),
+  achievedValue: real("achieved_value"),
+  targetUnit: text("target_unit", { enum: ["count", "percent", "currency_band"] }),
+  // currency_band only: allowed +/- deviation from targetValue before score starts dropping, e.g. 5 for "+/-5%".
+  bandPct: real("band_pct"),
+  scoreOverride: real("score_override"),
+});
+
+// A reusable KPI checklist for a role (e.g. "Influencer Marketing Executive"), so HR can spin up a
+// new hire's or a new cycle's goals in one click instead of retyping the same rows each time.
+export const kpiTemplates = sqliteTable("kpi_templates", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  role: text("role").notNull(),
+});
+
+export const kpiTemplateItems = sqliteTable("kpi_template_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  templateId: integer("template_id").notNull().references(() => kpiTemplates.id),
+  title: text("title").notNull(),
+  weightPct: real("weight_pct").notNull(),
+  targetValue: real("target_value"),
+  targetUnit: text("target_unit", { enum: ["count", "percent", "currency_band"] }),
+  bandPct: real("band_pct"),
+  sortOrder: integer("sort_order").notNull().default(0),
 });
 
 export const kraRatings = sqliteTable("kra_ratings", {

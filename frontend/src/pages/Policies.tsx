@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../auth";
 import { api } from "../api";
 import { useToast } from "../components/Toast";
-import { Badge } from "../components/Badge";
 
 interface Policy { id: number; title: string; content: string; category: string | null; version: number }
 
@@ -53,7 +52,7 @@ export function Policies() {
         <details key={category} className="card policy-folder">
           <summary className="policy-folder-summary">
             <span>{category}</span>
-            <Badge value={`${catPolicies.length}`} />
+            <span className="count-pill">{catPolicies.length}</span>
           </summary>
           <div className="list" style={{ marginTop: 14 }}>
             {catPolicies.map((p) => (

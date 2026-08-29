@@ -76,7 +76,7 @@ export function Leave() {
   const typeName = (id: number) => types.find((t) => t.id === id)?.name ?? id;
   const empName = (id: number) => employees.find((e) => e.id === id)?.fullName ?? `#${id}`;
 
-  if (loading) return <div><h1>Leave</h1><Spinner /></div>;
+  if (loading) return <div><div className="page-header"><h1>Leave</h1></div><Spinner /></div>;
 
   return (
     <div>

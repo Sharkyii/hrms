@@ -2,6 +2,7 @@ import { useState, type FormEvent, useEffect } from "react";
 import { useAuth } from "../auth";
 import { api, ApiError } from "../api";
 import { useToast } from "../components/Toast";
+import { initials } from "../initials";
 
 export function Profile() {
   const { session, employee } = useAuth();
@@ -49,10 +50,20 @@ export function Profile() {
       </div>
 
       <div className="card">
-        <h2>Details</h2>
-        <p><strong>{employee?.fullName}</strong> — {employee?.employeeCode}</p>
-        <p className="muted">{employee?.email}</p>
-        <p className="muted">Role: {session?.role}</p>
+        <div className="list-row" style={{ border: "none", padding: 0 }}>
+          <div className="avatar-chip" style={{ width: 52, height: 52, fontSize: 18 }}>{initials(employee?.fullName)}</div>
+          <div className="main">
+            <div className="title" style={{ fontSize: 17 }}>{employee?.fullName}</div>
+            <div className="subtitle">{employee?.employeeCode} · {employee?.designation ?? "—"}{employee?.department ? ` · ${employee.department}` : ""}</div>
+            <div className="subtitle">{employee?.email}</div>
+          </div>
+          <div className="meta">
+            <div className="col">
+              <div className="k">Role</div>
+              <div className="v" style={{ textTransform: "capitalize" }}>{session?.role}</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {bankDetails && (

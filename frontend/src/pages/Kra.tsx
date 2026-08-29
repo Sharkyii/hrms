@@ -3,6 +3,7 @@ import { useAuth } from "../auth";
 import { api } from "../api";
 import { Badge } from "../components/Badge";
 import { Icon } from "../components/Icon";
+import { ProgressBar } from "../components/Charts";
 import { useToast } from "../components/Toast";
 import { initials } from "../initials";
 import type { Employee } from "../auth";
@@ -10,6 +11,24 @@ import type { Employee } from "../auth";
 interface Cycle { id: number; name: string; startDate: string; endDate: string; status: string }
 interface Goal { id: number; employeeId: number; title: string; weightPct: number; target: string | null }
 interface KraScore { score: number | null; weightRatedPct: number; category: string | null }
+type TargetUnit = "count" | "percent" | "currency_band";
+interface KpiGoal {
+  id: number;
+  title: string;
+  weightPct: number;
+  targetValue: number | null;
+  achievedValue: number | null;
+  targetUnit: TargetUnit | null;
+  bandPct: number | null;
+  scorePct: number | null;
+}
+interface KpiScoreResult { goals: KpiGoal[]; overallScorePct: number | null; weightScoredPct: number }
+
+function unitLabel(unit: TargetUnit | null, bandPct: number | null): string {
+  if (unit === "percent") return "%";
+  if (unit === "currency_band") return bandPct ? `± ${bandPct}%` : "±%";
+  return "";
+}
 interface TaskRating { rating: number; comments: string | null; ratedAt: string }
 interface Task {
   id: number;
@@ -39,6 +58,11 @@ export function Kra() {
   const [taskForm, setTaskForm] = useState({ title: "", description: "", assignedToEmployeeId: "", dueDate: "" });
   const [rateDraft, setRateDraft] = useState<Record<number, { rating: string; comments: string }>>({});
   const [teamScores, setTeamScores] = useState<Array<{ employeeId: number; score: number | null; weightRatedPct: number; category: string | null }>>([]);
+  const [kpiScore, setKpiScore] = useState<KpiScoreResult | null>(null);
+  const [kpiViewEmployeeId, setKpiViewEmployeeId] = useState<string>("");
+  const [achievedDraft, setAchievedDraft] = useState<Record<number, string>>({});
+  const [showTargetFields, setShowTargetFields] = useState(false);
+  const [targetFields, setTargetFields] = useState({ targetValue: "", targetUnit: "count" as TargetUnit, bandPct: "" });
 
   const canManageTeam = can("kra.rate_team") || can("kra.view_all");
 
@@ -59,6 +83,12 @@ export function Kra() {
     load();
   }, [employee?.id]);
 
+  const kpiViewId = kpiViewEmployeeId ? Number(kpiViewEmployeeId) : employee?.id;
+  useEffect(() => {
+    if (!kpiViewId) return;
+    api.get<KpiScoreResult>(`/kra/kpi-score?employeeId=${kpiViewId}`).then(setKpiScore);
+  }, [kpiViewId, cycles.length]);
+
   async function createCycle() {
     await api.post("/kra/cycles", cycleForm);
     setCycleForm({ name: "", startDate: "", endDate: "" });
@@ -67,10 +97,30 @@ export function Kra() {
   }
 
   async function createGoal() {
-    await api.post("/kra/goals", { ...goalForm, employeeId: Number(goalForm.employeeId), cycleId: Number(goalForm.cycleId), weightPct: Number(goalForm.weightPct) });
+    await api.post("/kra/goals", {
+      ...goalForm,
+      employeeId: Number(goalForm.employeeId),
+      cycleId: Number(goalForm.cycleId),
+      weightPct: Number(goalForm.weightPct),
+      targetValue: showTargetFields && targetFields.targetValue ? Number(targetFields.targetValue) : undefined,
+      targetUnit: showTargetFields ? targetFields.targetUnit : undefined,
+      bandPct: showTargetFields && targetFields.targetUnit === "currency_band" && targetFields.bandPct ? Number(targetFields.bandPct) : undefined,
+    });
+    const goalEmployeeId = Number(goalForm.employeeId);
     setGoalForm({ employeeId: "", cycleId: "", title: "", weightPct: "" });
+    setTargetFields({ targetValue: "", targetUnit: "count", bandPct: "" });
+    setShowTargetFields(false);
     toast.success("Goal added.");
     await load();
+    if (goalEmployeeId === kpiViewId) setKpiScore(await api.get<KpiScoreResult>(`/kra/kpi-score?employeeId=${kpiViewId}`));
+  }
+
+  async function saveAchieved(goalId: number) {
+    const value = achievedDraft[goalId];
+    if (value === undefined || value === "") return;
+    await api.put(`/kra/goals/${goalId}/achieved`, { achievedValue: Number(value) });
+    toast.success("Achieved value saved.");
+    if (kpiViewId) setKpiScore(await api.get<KpiScoreResult>(`/kra/kpi-score?employeeId=${kpiViewId}`));
   }
 
   async function selfRate(goalId: number, rating: number) {
@@ -119,7 +169,7 @@ export function Kra() {
           <h2>Cycles</h2>
           <table>
             <thead><tr><th>Name</th><th>Start</th><th>End</th><th>Status</th></tr></thead>
-            <tbody>{cycles.map((c) => <tr key={c.id}><td>{c.name}</td><td>{c.startDate}</td><td>{c.endDate}</td><td>{c.status}</td></tr>)}</tbody>
+            <tbody>{cycles.map((c) => <tr key={c.id}><td>{c.name}</td><td>{c.startDate}</td><td>{c.endDate}</td><td><Badge value={c.status} /></td></tr>)}</tbody>
           </table>
           <div className="form-row" style={{ marginTop: 12 }}>
             <div className="field"><label>Name</label><input value={cycleForm.name} onChange={(e) => setCycleForm({ ...cycleForm, name: e.target.value })} /></div>
@@ -151,6 +201,29 @@ export function Kra() {
             <div className="field"><label>Weight %</label><input type="number" value={goalForm.weightPct} onChange={(e) => setGoalForm({ ...goalForm, weightPct: e.target.value })} /></div>
           </div>
           <div className="field"><label>Title</label><input value={goalForm.title} onChange={(e) => setGoalForm({ ...goalForm, title: e.target.value })} /></div>
+          <label className="checkbox-row" style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+            <input type="checkbox" checked={showTargetFields} onChange={(e) => setShowTargetFields(e.target.checked)} />
+            Track as Target / Achieved KPI (auto-computed score, instead of a 1-5 rating)
+          </label>
+          {showTargetFields && (
+            <div className="form-row">
+              <div className="field">
+                <label>Target type</label>
+                <select value={targetFields.targetUnit} onChange={(e) => setTargetFields({ ...targetFields, targetUnit: e.target.value as TargetUnit })}>
+                  <option value="count">Count (e.g. collaborations per month)</option>
+                  <option value="percent">Percent (e.g. % on time)</option>
+                  <option value="currency_band">Budget adherence (± band %)</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>{targetFields.targetUnit === "currency_band" ? "Target amount" : "Target value"}</label>
+                <input type="number" value={targetFields.targetValue} onChange={(e) => setTargetFields({ ...targetFields, targetValue: e.target.value })} />
+              </div>
+              {targetFields.targetUnit === "currency_band" && (
+                <div className="field"><label>Tolerance band %</label><input type="number" value={targetFields.bandPct} onChange={(e) => setTargetFields({ ...targetFields, bandPct: e.target.value })} placeholder="e.g. 5" /></div>
+              )}
+            </div>
+          )}
           <button className="btn" onClick={createGoal}>Add goal</button>
         </div>
       )}
@@ -188,6 +261,61 @@ export function Kra() {
         )}
       </div>
 
+      <div className="card">
+        <h2>KPI Scorecard</h2>
+        {canManageTeam && employees.length > 0 && (
+          <div className="field" style={{ maxWidth: 280, marginBottom: 12 }}>
+            <label>Employee</label>
+            <select value={kpiViewEmployeeId} onChange={(e) => setKpiViewEmployeeId(e.target.value)}>
+              <option value="">Me ({employee?.fullName})</option>
+              {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName}</option>)}
+            </select>
+          </div>
+        )}
+        {!kpiScore || kpiScore.goals.length === 0 ? (
+          <p className="empty">No target-based KPIs set for this cycle yet. Add one above with "Track as Target / Achieved KPI" checked.</p>
+        ) : (
+          <>
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Sr.</th><th>KPI</th><th>Weight %</th><th>Target</th><th>Achieved</th><th>Score %</th></tr></thead>
+                <tbody>
+                  {kpiScore.goals.map((g, i) => (
+                    <tr key={g.id}>
+                      <td>{i + 1}</td>
+                      <td>{g.title}</td>
+                      <td>{g.weightPct}%</td>
+                      <td>{g.targetValue !== null ? `${g.targetValue}${unitLabel(g.targetUnit, g.bandPct)}` : "—"}</td>
+                      <td>
+                        {canManageTeam ? (
+                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <input
+                              type="number"
+                              style={{ width: 80 }}
+                              placeholder={g.achievedValue !== null ? String(g.achievedValue) : "—"}
+                              value={achievedDraft[g.id] ?? ""}
+                              onChange={(e) => setAchievedDraft({ ...achievedDraft, [g.id]: e.target.value })}
+                            />
+                            <button className="btn secondary" style={{ padding: "2px 8px" }} onClick={() => saveAchieved(g.id)}>Save</button>
+                          </div>
+                        ) : (
+                          g.achievedValue !== null ? `${g.achievedValue}${unitLabel(g.targetUnit, null)}` : "—"
+                        )}
+                      </td>
+                      <td>{g.scorePct !== null ? <ProgressBar pct={g.scorePct} /> : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="stat-grid" style={{ marginTop: 16 }}>
+              <div className="stat"><div className="value">{kpiScore.overallScorePct !== null ? `${kpiScore.overallScorePct.toFixed(1)}%` : "—"}</div><div className="label">Overall score</div></div>
+              <div className="stat"><div className="value">{kpiScore.weightScoredPct}%</div><div className="label">Of cycle weight scored</div></div>
+            </div>
+          </>
+        )}
+      </div>
+
       {canManageTeam && (
         <div className="card">
           <h2>Team Performance Scores</h2>
@@ -203,7 +331,16 @@ export function Kra() {
                     return (
                       <tr key={s.employeeId}>
                         <td>{emp?.fullName ?? `ID ${s.employeeId}`}</td>
-                        <td>{s.score !== null ? `${s.score.toFixed(2)} / 5 (${s.weightRatedPct}% rated)` : "—"}</td>
+                        <td>
+                          {s.score !== null ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <strong>{s.score.toFixed(2)} / 5</strong>
+                              <ProgressBar pct={s.weightRatedPct} tone="accent" width={56} />
+                            </div>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
                         <td>{s.category ? <Badge value={s.category} /> : "—"}</td>
                       </tr>
                     );

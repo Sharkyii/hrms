@@ -44,17 +44,16 @@ interface TeamOverview {
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function ExecutiveOverviewSection({ data }: { data: ExecutiveOverview }) {
+  const totalApprovals = data.approvals.pendingLeaveRequests + data.approvals.pendingAttendanceExceptions + data.approvals.pendingCorrectionRequests;
   return (
     <>
       <div className="stat-grid" style={{ marginBottom: 20 }}>
-        <div className="stat">
+        <div className="stat accent">
           <div className="value">{data.employees.active}</div>
           <div className="label">Active employees</div>
         </div>
-        <div className="stat">
-          <div className="value">
-            {data.approvals.pendingLeaveRequests + data.approvals.pendingAttendanceExceptions + data.approvals.pendingCorrectionRequests}
-          </div>
+        <div className={`stat ${totalApprovals > 0 ? "warn" : ""}`}>
+          <div className="value">{totalApprovals}</div>
           <div className="label">Pending approvals</div>
         </div>
         <div className="stat">
@@ -65,22 +64,29 @@ function ExecutiveOverviewSection({ data }: { data: ExecutiveOverview }) {
           <div className="value">{data.performance.avgFinalRating ?? "—"}</div>
           <div className="label">Avg. performance rating</div>
         </div>
-        <div className="stat">
+        <div className={`stat ${data.approvals.pendingExits > 0 ? "warn" : ""}`}>
           <div className="value">{data.approvals.pendingExits}</div>
           <div className="label">Exits in progress</div>
         </div>
       </div>
 
-      <div className="card">
-        <h2>Approvals backlog</h2>
-        <BarRows
-          items={[
-            { label: "Attendance exceptions", value: data.approvals.pendingAttendanceExceptions },
-            { label: "Leave requests", value: data.approvals.pendingLeaveRequests },
-            { label: "Correction requests", value: data.approvals.pendingCorrectionRequests },
-            { label: "Exits in progress", value: data.approvals.pendingExits },
-          ]}
-        />
+      <div className="attention-band">
+        <div className={`attention-item ${data.approvals.pendingAttendanceExceptions > 0 ? "has-count" : ""}`}>
+          <div className="count">{data.approvals.pendingAttendanceExceptions}</div>
+          <div className="desc">Attendance exceptions awaiting review</div>
+        </div>
+        <div className={`attention-item ${data.approvals.pendingLeaveRequests > 0 ? "has-count" : ""}`}>
+          <div className="count">{data.approvals.pendingLeaveRequests}</div>
+          <div className="desc">Leave requests pending</div>
+        </div>
+        <div className={`attention-item ${data.approvals.pendingCorrectionRequests > 0 ? "has-count" : ""}`}>
+          <div className="count">{data.approvals.pendingCorrectionRequests}</div>
+          <div className="desc">Correction requests open</div>
+        </div>
+        <div className={`attention-item ${data.approvals.pendingExits > 0 ? "has-count" : ""}`}>
+          <div className="count">{data.approvals.pendingExits}</div>
+          <div className="desc">Exits in progress</div>
+        </div>
       </div>
 
       <div className="card">
@@ -131,15 +137,15 @@ function ManagerOverviewSection({ data }: { data: TeamOverview }) {
   return (
     <>
       <div className="stat-grid" style={{ marginBottom: 20 }}>
-        <div className="stat">
+        <div className="stat accent">
           <div className="value">{data.team.presentToday}/{data.team.active}</div>
           <div className="label">Present today</div>
         </div>
-        <div className="stat">
+        <div className={`stat ${data.approvals.pendingAttendanceExceptions > 0 ? "warn" : ""}`}>
           <div className="value">{data.approvals.pendingAttendanceExceptions}</div>
           <div className="label">Attendance exceptions</div>
         </div>
-        <div className="stat">
+        <div className={`stat ${data.approvals.pendingLeaveRequests > 0 ? "warn" : ""}`}>
           <div className="value">{data.approvals.pendingLeaveRequests}</div>
           <div className="label">Pending leave</div>
         </div>
@@ -254,28 +260,41 @@ export function Dashboard() {
       {error && <div className="error-banner">{error}</div>}
       {queuedCount > 0 && <p className="muted">{queuedCount} punch(es) queued offline, waiting to sync.</p>}
 
-      {executiveOverview && <ExecutiveOverviewSection data={executiveOverview} />}
-      {!executiveOverview && teamOverview && <ManagerOverviewSection data={teamOverview} />}
-
       <div className="card">
         <h2>My attendance today</h2>
-        <p>
-          In: <strong>{today?.punchInAt ? new Date(today.punchInAt).toLocaleTimeString() : "—"}</strong> &nbsp; Out:{" "}
-          <strong>{today?.punchOutAt ? new Date(today.punchOutAt).toLocaleTimeString() : "—"}</strong>
-        </p>
-        {today && (
-          <p>
-            <Badge value={today.confidence} /> <Badge value={today.status} />
-            {today.flagReason && <span className="muted"> — {today.flagReason}</span>}
-          </p>
-        )}
-        <button className="btn" disabled={busy} onClick={() => punch("in")}>
-          Punch In
-        </button>{" "}
-        <button className="btn secondary" disabled={busy} onClick={() => punch("out")}>
-          Punch Out
-        </button>
+        <div className="punch-card">
+          <div className="punch-times">
+            <div>
+              <div className="t-label">In</div>
+              <div className="t-value">{today?.punchInAt ? new Date(today.punchInAt).toLocaleTimeString() : "—"}</div>
+            </div>
+            <div>
+              <div className="t-label">Out</div>
+              <div className="t-value">{today?.punchOutAt ? new Date(today.punchOutAt).toLocaleTimeString() : "—"}</div>
+            </div>
+            {today && (
+              <div>
+                <div className="t-label">Status</div>
+                <div style={{ marginTop: 2 }}>
+                  <Badge value={today.confidence} /> <Badge value={today.status} />
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="punch-actions">
+            <button className="btn" disabled={busy} onClick={() => punch("in")}>
+              Punch In
+            </button>
+            <button className="btn secondary" disabled={busy} onClick={() => punch("out")}>
+              Punch Out
+            </button>
+          </div>
+        </div>
+        {today?.flagReason && <p className="muted" style={{ fontSize: 13, marginTop: 10, marginBottom: 0 }}>{today.flagReason}</p>}
       </div>
+
+      {executiveOverview && <ExecutiveOverviewSection data={executiveOverview} />}
+      {!executiveOverview && teamOverview && <ManagerOverviewSection data={teamOverview} />}
 
       <div className="card">
         <h2>Recent attendance</h2>

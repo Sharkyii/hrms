@@ -3,7 +3,7 @@
   "short_name": "HRMS",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f5f6f8",
-  "theme_color": "#2563eb",
+  "background_color": "#fbfbfa",
+  "theme_color": "#6a5ff5",
   "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
 }

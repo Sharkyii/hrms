@@ -26,15 +26,23 @@ function cellStr(v: unknown): string {
   return v === undefined || v === null ? "" : String(v).trim();
 }
 
-// Combines a date string ("2026-07-01") with a time string ("09:19" or "09:19:00") into an ISO
-// datetime. Returns null if either half is missing/unparseable — used to skip half-punched days.
+// Biometric devices report punch times in local office time (IST, UTC+5:30), not UTC. Combines a
+// date string ("2026-07-01") with a time string ("09:19" or "09:19:00") into a correct UTC ISO
+// datetime. Building the offset explicitly avoids Date's local-timezone methods (setHours, etc.),
+// which resolve against the *runtime's* timezone — UTC on Cloudflare Workers regardless of where
+// the device/office actually is — and would otherwise silently store the wrong instant.
+// Returns null if either half is missing/unparseable — used to skip half-punched days.
+const OFFICE_UTC_OFFSET = "+05:30";
+
 function combineDateTime(dateStr: string, timeStr: string): string | null {
   if (!dateStr || !timeStr) return null;
+  const dateMatch = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
   const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})/);
-  if (!timeMatch) return null;
-  const parsed = new Date(dateStr);
+  if (!dateMatch || !timeMatch) return null;
+  const [, year, month, day] = dateMatch;
+  const [, hour, minute] = timeMatch;
+  const parsed = new Date(`${year}-${month}-${day}T${hour.padStart(2, "0")}:${minute}:00${OFFICE_UTC_OFFSET}`);
   if (isNaN(parsed.getTime())) return null;
-  parsed.setHours(Number(timeMatch[1]), Number(timeMatch[2]), 0, 0);
   return parsed.toISOString();
 }
 
