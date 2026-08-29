@@ -344,6 +344,7 @@ export function OrgChart() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [customPositions, setCustomPositions] = useState<Map<number, NodePosition>>(new Map());
+  const [fitTick, setFitTick] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const toast = useToast();
@@ -370,6 +371,27 @@ export function OrgChart() {
 
   const tree = buildTree(filteredEmployees);
   const positions = calculatePositions(tree);
+
+  // Auto-fit the whole tree into the visible canvas whenever the data or filter changes, so
+  // every employee is visible on load instead of requiring the user to discover manual pan/zoom.
+  useEffect(() => {
+    if (positions.size === 0 || !containerRef.current) return;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    positions.forEach(({ x, y }) => {
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x + 160);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y + 110);
+    });
+    const treeWidth = maxX - minX;
+    const treeHeight = maxY - minY;
+    const { clientWidth, clientHeight } = containerRef.current;
+    const fitZoom = Math.max(0.25, Math.min(1.5, Math.min(clientWidth / (treeWidth + 80), clientHeight / (treeHeight + 80))));
+    setZoom(fitZoom);
+    setPan({ x: -minX * fitZoom + 40, y: -minY * fitZoom + 40 });
+    setCustomPositions(new Map());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employees, selectedDept, fitTick]);
 
   async function handleAdd(managerId: number) {
     setShowAddModal(managerId);
@@ -454,12 +476,7 @@ export function OrgChart() {
         <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
           <select
             value={selectedDept || ""}
-            onChange={(e) => {
-              setSelectedDept(e.target.value || null);
-              setZoom(1);
-              setPan({ x: 0, y: 0 });
-              setCustomPositions(new Map());
-            }}
+            onChange={(e) => setSelectedDept(e.target.value || null)}
             style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--border)", fontSize: "14px" }}
           >
             <option value="">All Teams</option>
@@ -467,7 +484,7 @@ export function OrgChart() {
               <option key={d} value={d}>{d}</option>
             ))}
           </select>
-          <button className="btn secondary" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); setCustomPositions(new Map()); }}>Reset</button>
+          <button className="btn secondary" onClick={() => setFitTick((t) => t + 1)}>Reset</button>
           <span style={{ fontSize: "12px", color: "var(--muted)" }}>Zoom: {(zoom * 100).toFixed(0)}%</span>
           {canAdd && <button className="btn" onClick={() => setShowAddModal(null)}>
             <Icon name="add" /> Add Root
