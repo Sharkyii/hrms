@@ -49,7 +49,7 @@ export function Layout() {
       items: [
         { to: "/", label: "Dashboard", icon: "dashboard", show: true },
         { to: "/employees", label: "Employees", icon: "employees", show: true },
-        { to: "/org-chart", label: "Org Chart", icon: "employees", show: true },
+        { to: "/org-chart", label: "Org Chart", icon: "employees", show: can("employee.view_team") || can("employee.view_all") },
       ],
     },
     {
