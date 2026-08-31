@@ -118,6 +118,7 @@ export const companySettings = sqliteTable("company_settings", {
   addressLine2: text("address_line2"),
   panNumber: text("pan_number"),
   logoBase64: text("logo_base64"),
+  signatureBase64: text("signature_base64"),
   signatoryLabel: text("signatory_label").notNull().default("Authorized Signatory"),
 });
 

@@ -52,12 +52,12 @@ app.post("/import/preview", async (c) => {
     if (err instanceof BiometricParseError) {
       return c.json(
         {
-          error: `${err.message} Detected columns: ${err.detectedColumns.length ? err.detectedColumns.join(", ") : "(none — is this a valid .xlsx export?)"}`,
+          error: `${err.message} Detected columns: ${err.detectedColumns.length ? err.detectedColumns.join(", ") : "(none — is this a valid .xlsx or .xls export?)"}`,
         },
         400,
       );
     }
-    return c.json({ error: "Could not read this file as an Excel workbook (.xlsx)." }, 400);
+    return c.json({ error: "Could not read this file as an Excel workbook (.xlsx, .xls)." }, 400);
   }
 
   const mappings = await db.select().from(biometricDeviceMappings).where(eq(biometricDeviceMappings.deviceId, device.id)).all();

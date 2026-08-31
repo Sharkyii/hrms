@@ -127,8 +127,8 @@ export function Biometric() {
             </select>
           </div>
           <div className="field">
-            <label>File (.xlsx)</label>
-            <input type="file" accept=".xlsx" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            <label>File (.xlsx, .xls)</label>
+            <input type="file" accept=".xlsx, .xls" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           </div>
         </div>
         <button className="btn" onClick={uploadPreview} disabled={busy}>{busy ? "Uploading..." : "Preview"}</button>

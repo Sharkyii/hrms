@@ -741,13 +741,14 @@ interface CompanySettings {
   addressLine2: string | null;
   panNumber: string | null;
   logoBase64: string | null;
+  signatureBase64: string | null;
   signatoryLabel: string;
 }
 
 function Settings() {
   const toast = useToast();
   const [settings, setSettings] = useState<StatutorySettings | null>(null);
-  const [company, setCompany] = useState<CompanySettings>({ name: "", addressLine1: "", addressLine2: "", panNumber: "", logoBase64: null, signatoryLabel: "Authorized Signatory" });
+  const [company, setCompany] = useState<CompanySettings>({ name: "", addressLine1: "", addressLine2: "", panNumber: "", logoBase64: null, signatureBase64: null, signatoryLabel: "Authorized Signatory" });
 
   useEffect(() => {
     api.get<StatutorySettings | null>("/payroll/statutory-settings").then(setSettings);
@@ -769,13 +770,20 @@ function Settings() {
     toast.success("Company settings saved — used on the payslip PDF letterhead.");
   }
 
-  function onLogoSelected(file: File | null) {
+  // Base64-encoded PNGs always start with "iVBORw0KGgo" (the PNG magic bytes) — used to pick the
+  // right data-URI mime type for previewing an image we only have raw base64 for.
+  function previewSrc(base64: string): string {
+    const mime = base64.startsWith("iVBORw0KGgo") ? "image/png" : "image/jpeg";
+    return `data:${mime};base64,${base64}`;
+  }
+
+  function onImageSelected(field: "logoBase64" | "signatureBase64", file: File | null) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
       const base64 = result.split(",")[1] ?? result;
-      setCompany({ ...company, logoBase64: base64 });
+      setCompany((current) => ({ ...current, [field]: base64 }));
     };
     reader.readAsDataURL(file);
   }
@@ -795,7 +803,14 @@ function Settings() {
         </div>
         <div className="form-row">
           <div className="field"><label>Signatory label</label><input value={company.signatoryLabel} onChange={(e) => setCompany({ ...company, signatoryLabel: e.target.value })} /></div>
-          <div className="field"><label>Logo (PNG/JPG)</label><input type="file" accept="image/png,image/jpeg" onChange={(e) => onLogoSelected(e.target.files?.[0] ?? null)} /></div>
+          <div className="field"><label>Logo (PNG/JPG)</label><input type="file" accept="image/png,image/jpeg" onChange={(e) => onImageSelected("logoBase64", e.target.files?.[0] ?? null)} /></div>
+        </div>
+        <div className="form-row">
+          <div className="field">
+            <label>Signature / stamp (PNG/JPG)</label>
+            <input type="file" accept="image/png,image/jpeg" onChange={(e) => onImageSelected("signatureBase64", e.target.files?.[0] ?? null)} />
+            {company.signatureBase64 && <img src={previewSrc(company.signatureBase64)} alt="Signature preview" style={{ maxHeight: 44, marginTop: 8 }} />}
+          </div>
         </div>
         <button className="btn" onClick={saveCompany}>Save company settings</button>
       </div>

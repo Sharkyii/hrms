@@ -43,6 +43,9 @@ export const employeeDocumentTypeValues = [
   "previous_salary_slip",
   "relieving_letter",
   "experience_certificate",
+  // Catch-all for anything HR needs on file that doesn't fit the fixed list above — the actual
+  // name of the document is then whatever is typed into `label` at upload time.
+  "other",
 ] as const;
 
 // Metadata row per uploaded file — the file bytes live in R2, keyed by r2Key.
@@ -50,6 +53,8 @@ export const employeeDocuments = sqliteTable("employee_documents", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   employeeId: integer("employee_id").notNull().references(() => employees.id),
   docType: text("doc_type", { enum: employeeDocumentTypeValues }).notNull(),
+  // Only set (and only meaningful) when docType is "other" — the free-text name HR gave this document.
+  label: text("label"),
   fileName: text("file_name").notNull(),
   r2Key: text("r2_key").notNull(),
   contentType: text("content_type").notNull(),

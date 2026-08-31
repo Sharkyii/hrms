@@ -42,6 +42,7 @@ interface LeaveRequest {
 interface DocumentMeta {
   id: number;
   docType: string;
+  label: string | null;
   fileName: string;
   contentType: string;
   fileSize: number;
@@ -165,6 +166,7 @@ export function EmployeeDetail() {
   const [savingLog, setSavingLog] = useState(false);
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [uploadingType, setUploadingType] = useState<string | null>(null);
+  const [otherDocLabel, setOtherDocLabel] = useState("");
 
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -229,12 +231,13 @@ export function EmployeeDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  async function uploadDoc(docType: string, file: File) {
+  async function uploadDoc(docType: string, file: File, label?: string) {
     setUploadingType(docType);
     try {
       const form = new FormData();
       form.append("file", file);
       form.append("docType", docType);
+      if (label) form.append("label", label);
       await api.postForm(`/employees/${id}/documents`, form);
       toast.success("Document uploaded.");
       loadDocuments();
@@ -522,6 +525,52 @@ export function EmployeeDetail() {
           </div>
         </div>
       )}
+
+      <div className="card">
+        <h2>Other documents</h2>
+        <p className="muted">Anything that doesn't fit the categories above — give it a name and attach a file.</p>
+        <div className="list">
+          {documents.filter((d) => d.docType === "other").map((f) => (
+            <div className="list-row" key={f.id}>
+              <div className="main">
+                <div className="title">{f.label || f.fileName}</div>
+                <div className="subtitle">
+                  <a href={`/api/employees/${id}/documents/${f.id}/download`} target="_blank" rel="noreferrer">{f.fileName}</a>{" "}
+                  <span className="muted">({formatBytes(f.fileSize)})</span>
+                </div>
+              </div>
+              {can("employee.manage") && (
+                <button className="btn danger" style={{ padding: "2px 8px", fontSize: 12 }} onClick={() => deleteDoc(f.id)}>Remove</button>
+              )}
+            </div>
+          ))}
+          {documents.filter((d) => d.docType === "other").length === 0 && <p className="empty">No other documents uploaded yet.</p>}
+        </div>
+        {canUploadDocs && (
+          <div className="form-row" style={{ marginTop: 14, alignItems: "flex-end" }}>
+            <div className="field" style={{ flex: 1 }}>
+              <label>Document name</label>
+              <input value={otherDocLabel} onChange={(e) => setOtherDocLabel(e.target.value)} placeholder="e.g. Medical certificate" />
+            </div>
+            <label className="btn secondary" style={{ cursor: otherDocLabel.trim() ? "pointer" : "not-allowed", opacity: otherDocLabel.trim() ? 1 : 0.5 }}>
+              {uploadingType === "other" ? "Uploading..." : "Upload"}
+              <input
+                type="file"
+                style={{ display: "none" }}
+                disabled={uploadingType !== null || !otherDocLabel.trim()}
+                onChange={(ev) => {
+                  const file = ev.target.files?.[0];
+                  if (file && otherDocLabel.trim()) {
+                    uploadDoc("other", file, otherDocLabel.trim());
+                    setOtherDocLabel("");
+                  }
+                  ev.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+        )}
+      </div>
 
       <div className="card">
         <h2>Attendance — this month</h2>

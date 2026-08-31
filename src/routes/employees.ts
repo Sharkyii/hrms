@@ -318,6 +318,10 @@ app.post("/:id/documents", async (c) => {
   if (!(file instanceof File) || typeof docType !== "string" || !(employeeDocumentTypeValues as readonly string[]).includes(docType)) {
     return c.json({ error: "file and a valid docType are required" }, 400);
   }
+  const label = typeof form?.get("label") === "string" ? (form.get("label") as string).trim() : "";
+  if (docType === "other" && !label) {
+    return c.json({ error: "A label is required for 'other' documents" }, 400);
+  }
   if (file.size > MAX_DOCUMENT_BYTES) return c.json({ error: "File must be under 10MB" }, 400);
 
   const r2Key = `employees/${id}/${docType}/${Date.now()}-${file.name}`;
@@ -329,6 +333,7 @@ app.post("/:id/documents", async (c) => {
     .values({
       employeeId: id,
       docType: docType as (typeof employeeDocumentTypeValues)[number],
+      label: docType === "other" ? label : null,
       fileName: file.name,
       r2Key,
       contentType,
@@ -353,7 +358,7 @@ app.get("/:id/documents", async (c) => {
   if (!canViewAll && !canViewTeam && !isSelf) return c.json({ error: "Forbidden" }, 403);
 
   const docs = await db.select().from(employeeDocuments).where(eq(employeeDocuments.employeeId, id)).orderBy(desc(employeeDocuments.uploadedAt)).all();
-  return c.json(docs.map((d) => ({ id: d.id, docType: d.docType, fileName: d.fileName, contentType: d.contentType, fileSize: d.fileSize, uploadedAt: d.uploadedAt })));
+  return c.json(docs.map((d) => ({ id: d.id, docType: d.docType, label: d.label, fileName: d.fileName, contentType: d.contentType, fileSize: d.fileSize, uploadedAt: d.uploadedAt })));
 });
 
 app.get("/:id/documents/:docId/download", async (c) => {

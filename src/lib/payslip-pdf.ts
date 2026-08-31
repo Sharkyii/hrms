@@ -7,6 +7,7 @@ export interface PayslipPdfData {
     addressLine2: string | null;
     panNumber: string | null;
     logoBase64: string | null;
+    signatureBase64: string | null;
     signatoryLabel: string;
   };
   employee: {
@@ -48,6 +49,20 @@ const BLACK = rgb(0, 0, 0);
 
 function fmt(n: number): string {
   return n === 0 ? "-" : n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+}
+
+// Decodes a data-URI or raw base64 image string and embeds it in the PDF. Used for both the
+// company logo and the signature/stamp — malformed data falls back to null so the caller can
+// render its text-only fallback instead of failing the whole payslip.
+async function embedBase64Image(doc: PDFDocument, base64: string | null) {
+  if (!base64) return null;
+  try {
+    const bytes = Uint8Array.from(atob(base64.replace(/^data:image\/\w+;base64,/, "")), (c) => c.charCodeAt(0));
+    const isPng = base64.includes("image/png") || bytes[0] === 0x89;
+    return isPng ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+  } catch {
+    return null;
+  }
 }
 
 class Sheet {
@@ -135,27 +150,21 @@ export async function generatePayslipPdf(data: PayslipPdfData): Promise<Uint8Arr
   sheet.box(MARGIN, headerTop - headerHeight, CONTENT_WIDTH, headerHeight);
 
   let textX = MARGIN + 12;
-  if (data.company.logoBase64) {
-    try {
-      const bytes = Uint8Array.from(atob(data.company.logoBase64.replace(/^data:image\/\w+;base64,/, "")), (c) => c.charCodeAt(0));
-      const isPng = data.company.logoBase64.includes("image/png") || bytes[0] === 0x89;
-      const image = isPng ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
-      // Fit within a box rather than forcing a square — preserves aspect ratio for wide wordmark logos.
-      const maxWidth = 140;
-      const maxHeight = 44;
-      const scale = Math.min(maxWidth / image.width, maxHeight / image.height, 1);
-      const drawWidth = image.width * scale;
-      const drawHeight = image.height * scale;
-      page.drawImage(image, {
-        x: MARGIN + 10,
-        y: headerTop - headerHeight / 2 - drawHeight / 2,
-        width: drawWidth,
-        height: drawHeight,
-      });
-      textX = MARGIN + 10 + drawWidth + 14;
-    } catch {
-      // malformed logo data — fall back to text-only header
-    }
+  const logoImage = await embedBase64Image(doc, data.company.logoBase64);
+  if (logoImage) {
+    // Fit within a box rather than forcing a square — preserves aspect ratio for wide wordmark logos.
+    const maxWidth = 140;
+    const maxHeight = 44;
+    const scale = Math.min(maxWidth / logoImage.width, maxHeight / logoImage.height, 1);
+    const drawWidth = logoImage.width * scale;
+    const drawHeight = logoImage.height * scale;
+    page.drawImage(logoImage, {
+      x: MARGIN + 10,
+      y: headerTop - headerHeight / 2 - drawHeight / 2,
+      width: drawWidth,
+      height: drawHeight,
+    });
+    textX = MARGIN + 10 + drawWidth + 14;
   }
 
   sheet.y = headerTop - 22;
@@ -246,7 +255,26 @@ export async function generatePayslipPdf(data: PayslipPdfData): Promise<Uint8Arr
 
   // --- Footer / signature ---
   sheet.text(`For ${data.company.name}`, MARGIN, 9, { align: "right", width: CONTENT_WIDTH });
-  sheet.y -= 28;
+  sheet.y -= 8;
+
+  const signatureImage = await embedBase64Image(doc, data.company.signatureBase64);
+  if (signatureImage) {
+    const maxWidth = 110;
+    const maxHeight = 50;
+    const scale = Math.min(maxWidth / signatureImage.width, maxHeight / signatureImage.height, 1);
+    const drawWidth = signatureImage.width * scale;
+    const drawHeight = signatureImage.height * scale;
+    sheet.y -= drawHeight;
+    page.drawImage(signatureImage, {
+      x: MARGIN + CONTENT_WIDTH - drawWidth,
+      y: sheet.y,
+      width: drawWidth,
+      height: drawHeight,
+    });
+    sheet.y -= 6;
+  } else {
+    sheet.y -= 20;
+  }
   sheet.text(data.company.signatoryLabel, MARGIN, 9, { align: "right", width: CONTENT_WIDTH });
 
   return doc.save();

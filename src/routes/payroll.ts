@@ -618,6 +618,7 @@ app.get("/payslips/:id/pdf", async (c) => {
       addressLine2: company?.addressLine2 ?? null,
       panNumber: company?.panNumber ?? null,
       logoBase64: company?.logoBase64 ?? null,
+      signatureBase64: company?.signatureBase64 ?? null,
       signatoryLabel: company?.signatoryLabel ?? "Authorized Signatory",
     },
     employee: {
@@ -628,7 +629,7 @@ app.get("/payslips/:id/pdf", async (c) => {
       dateOfJoining: employee.dateOfJoining,
     },
     payrollDetails: payrollDetails ?? null,
-    bankName: bank?.bankName ?? null,
+    bankName: bank ? `${bank.bankName ?? ""} ${bank.accountNumber ?? ""}`.trim() : null,
     periodLabel: `${MONTH_NAMES[run.month - 1]} -${run.year}`,
     attendance: {
       present: payslip.presentDays,
